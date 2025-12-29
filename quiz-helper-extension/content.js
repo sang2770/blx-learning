@@ -4,7 +4,7 @@ class QuizHelper {
     this.isEnabled = true;
     this.observerActive = false;
     this.processedQuestions = new Set();
-    
+    this.addSaveButtonInterval = null;
     this.init();
   }
 
@@ -80,12 +80,13 @@ class QuizHelper {
         return;
       }
 
-      alert('Đang xử lý câu hỏi: ' + questionId);
-
       this.processedQuestions.add(questionId);
       
       // Always add save button
-      this.addSaveButton(questionPanel);
+      this.addSaveButtonInterval && clearInterval(this.addSaveButtonInterval);
+      this.addSaveButtonInterval = setInterval(() => {
+        this.addSaveButton(questionPanel);
+      }, 1000);
 
       // Try to extract basic question data for checking saved answers
       const questionData = this.extractQuestionData(questionPanel);
@@ -208,13 +209,13 @@ class QuizHelper {
 
   addSaveButton(questionPanel) {
     // Check if save button already exists
-    if (questionPanel.querySelector('.quiz-helper-save-btn')) {
+    if (document.querySelector('.quiz-helper-save-btn')) {
       return;
     }
 
     // Find the footer or next button area
-    const footer = questionPanel.querySelector('#practice-question-footer-pc, .question-footer, [class*="footer"]') ||
-                   questionPanel;
+    const footer = document.querySelector('#practice-question-footer-pc, .question-footer, [class*="footer"]') ||
+                   document.body;
 
     // Create save button
     const saveButton = document.createElement('button');
