@@ -43,6 +43,7 @@
   from {
     box-shadow: 0 0 5px #ffc107;
   }
+
   to {
     box-shadow: 0 0 15px #ffc107, 0 0 20px #ffc107;
   }
@@ -66,9 +67,12 @@
 }
 
 @keyframes quiz-helper-bounce {
-  0%, 100% {
+
+  0%,
+  100% {
     transform: translateY(0);
   }
+
   50% {
     transform: translateY(-3px);
   }
@@ -253,4 +257,29 @@
   border: inherit !important;
   animation: none !important;
   box-shadow: none !important;
+}
+
+/* Debug Console Styles */
+.quiz-helper-debug-controls {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.quiz-helper-debug-controls .quiz-helper-button {
+  flex: 1;
+  font-size: 13px;
+}
+
+.quiz-helper-debug-info {
+  background: #f8f9fa;
+  border: 1px solid #e9ecef;
+  border-radius: 4px;
+  padding: 8px;
+  margin-top: 8px;
+}
+
+.quiz-helper-debug-info small {
+  color: #6c757d;
+  font-style: italic;
 }

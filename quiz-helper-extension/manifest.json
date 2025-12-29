@@ -3,20 +3,15 @@
   "name": "Quiz Helper - Answer Suggestion",
   "version": "1.0",
   "description": "Lưu và gợi ý đáp án cho các câu hỏi trắc nghiệm",
-  
-  "permissions": [
-    "storage",
-    "activeTab"
-  ],
-  
-  "host_permissions": [
-    "https://daotaosathachlaixeaulac.huelms.com/*"
-  ],
-  
+
+  "permissions": ["storage", "activeTab", "windows"],
+
+  "host_permissions": ["https://daotaosathachlaixeaulac.huelms.com/*"],
+
   "background": {
     "service_worker": "background.js"
   },
-  
+
   "content_scripts": [
     {
       "matches": ["https://daotaosathachlaixeaulac.huelms.com/*"],
@@ -25,9 +20,16 @@
       "run_at": "document_end"
     }
   ],
-  
+
   "action": {
     "default_popup": "popup.html",
     "default_title": "Quiz Helper"
-  }
+  },
+
+  "web_accessible_resources": [
+    {
+      "resources": ["debug-window.html", "debug-window.js"],
+      "matches": ["<all_urls>"]
+    }
+  ]
 }

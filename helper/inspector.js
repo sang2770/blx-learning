@@ -47,6 +47,20 @@
     }
   }, true);
 
+  document.addEventListener("dblclick", async (e) => {
+    const el = document.elementFromPoint(e.clientX, e.clientY);
+    if (!el || el === overlay || el === infoBox) return;
+
+    try {
+      await navigator.clipboard.writeText(el.outerHTML);
+      infoBox.textContent = "COPIED HTML (DOUBLE CLICK)";
+      e.preventDefault();
+      e.stopPropagation();
+    } catch (err) {
+      console.error("Clipboard error", err);
+    }
+  }, true);
+
   // Phím tắt:
   // Alt+L lock/unlock
   // Alt+C copy selector

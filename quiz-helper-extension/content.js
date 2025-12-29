@@ -1,27 +1,66 @@
 // Content script - main functionality
+
+// Debug Logger Class
+class DebugLogger {
+  static async log(level, message, data = null) {
+    const timestamp = new Date().toISOString();
+    const logEntry = {
+      timestamp,
+      level: level.toUpperCase(),
+      message,
+      data: data ? JSON.stringify(data) : null
+    };
+
+    try {
+      await chrome.runtime.sendMessage({
+        action: 'saveDebugLog',
+        log: logEntry
+      });
+    } catch (error) {
+      console.error('Failed to save debug log:', error);
+    }
+  }
+
+  static async info(message, data = null) {
+    await this.log('info', message, data);
+  }
+
+  static async warning(message, data = null) {
+    await this.log('warning', message, data);
+  }
+
+  static async error(message, data = null) {
+    await this.log('error', message, data);
+  }
+}
+
 class QuizHelper {
   constructor() {
     this.isEnabled = true;
     this.observerActive = false;
-    this.processedQuestions = new Set();
     this.addSaveButtonInterval = null;
     this.init();
   }
 
   async init() {
+    await DebugLogger.info('QuizHelper initializing...', { url: window.location.href });
+
     // Check if extension is enabled
     const result = await chrome.storage.sync.get(['extensionEnabled']);
     this.isEnabled = result.extensionEnabled !== false;
-    
+
+    await DebugLogger.info(`Extension enabled status: ${this.isEnabled}`);
+
     if (this.isEnabled) {
       this.startObserver();
       this.processExistingQuestions();
     }
-    
+
     // Listen for extension toggle
     chrome.storage.onChanged.addListener((changes) => {
       if (changes.extensionEnabled) {
         this.isEnabled = changes.extensionEnabled.newValue;
+        DebugLogger.info(`Extension toggled: ${this.isEnabled ? 'enabled' : 'disabled'}`);
         if (this.isEnabled) {
           this.startObserver();
           this.processExistingQuestions();
@@ -35,7 +74,7 @@ class QuizHelper {
 
   startObserver() {
     if (this.observerActive) return;
-    
+
     this.observer = new MutationObserver((mutations) => {
       mutations.forEach((mutation) => {
         mutation.addedNodes.forEach((node) => {
@@ -50,7 +89,7 @@ class QuizHelper {
       childList: true,
       subtree: true
     });
-    
+
     this.observerActive = true;
   }
 
@@ -76,12 +115,12 @@ class QuizHelper {
   async processQuestion(questionPanel) {
     try {
       const questionId = this.extractQuestionId(questionPanel);
-      if (!questionId || this.processedQuestions.has(questionId)) {
+      if (!questionId) {
         return;
       }
 
-      this.processedQuestions.add(questionId);
-      
+      await DebugLogger.info(`Processing question: ${questionId}`);
+
       // Always add save button
       this.addSaveButtonInterval && clearInterval(this.addSaveButtonInterval);
       this.addSaveButtonInterval = setInterval(() => {
@@ -90,11 +129,12 @@ class QuizHelper {
 
       // Try to extract basic question data for checking saved answers
       const questionData = this.extractQuestionData(questionPanel);
+      DebugLogger.info('Extracted question data', { questionId, questionData });
       if (questionData) {
         // Check for saved answer and highlight if found
         await this.checkAndHighlightSavedAnswer(questionPanel, questionData);
       }
-      
+
     } catch (error) {
       console.error('Error processing question:', error);
     }
@@ -102,9 +142,9 @@ class QuizHelper {
 
   extractQuestionId(questionPanel) {
     // Extract question ID from various possible attributes
-    return questionPanel.id || 
-           questionPanel.querySelector('[id^="question"]')?.id ||
-           questionPanel.dataset.questionId;
+    return questionPanel.id ||
+      questionPanel.querySelector('[id^="question"]')?.id ||
+      questionPanel.dataset.questionId;
   }
 
   extractQuestionData(questionPanel) {
@@ -117,14 +157,13 @@ class QuizHelper {
       const answers = this.extractAnswers(questionPanel);
       if (answers.length === 0) return null;
 
-      // Generate a hash for the question
-      const questionHash = this.generateQuestionHash(questionText, answers);
+      // Generate a unique ID for the question
+      const questionId = this.extractQuestionId(questionPanel);
 
       return {
-        questionHash,
-        question: questionText,
-        allAnswers: answers,
-        url: window.location.href
+        id: questionId,
+        title: questionText,
+        allAnswers: answers
       };
     } catch (error) {
       console.error('Error extracting question data:', error);
@@ -156,15 +195,14 @@ class QuizHelper {
 
   extractAnswers(questionPanel) {
     const answers = [];
-    
+
     // Look for radio buttons and their labels
     const radioInputs = questionPanel.querySelectorAll('input[type="radio"]');
-    
-    radioInputs.forEach((radio, index) => {
+
+    radioInputs.forEach((radio) => {
       const label = this.findAnswerLabel(radio);
       if (label) {
         answers.push({
-          index,
           text: label.trim(),
           value: radio.value
         });
@@ -177,29 +215,17 @@ class QuizHelper {
   findAnswerLabel(radioInput) {
     // Try to find the associated label text
     const parent = radioInput.closest('.mc-text-question__radio-answer') ||
-                   radioInput.closest('[class*="answer"]') ||
-                   radioInput.parentElement;
-    
+      radioInput.closest('[class*="answer"]') ||
+      radioInput.parentElement;
+
     if (parent) {
       const label = parent.querySelector('label, .content-display');
       if (label) {
         return label.textContent?.trim();
       }
     }
-    
-    return null;
-  }
 
-  generateQuestionHash(questionText, answers) {
-    // Create a simple hash based on question and answers
-    const content = questionText + answers.map(a => a.text).join('');
-    let hash = 0;
-    for (let i = 0; i < content.length; i++) {
-      const char = content.charCodeAt(i);
-      hash = ((hash << 5) - hash) + char;
-      hash = hash & hash; // Convert to 32-bit integer
-    }
-    return Math.abs(hash).toString(36);
+    return null;
   }
 
   hasCorrectAnswer(questionPanel) {
@@ -214,15 +240,17 @@ class QuizHelper {
     }
 
     // Find the footer or next button area
-    const footer = document.querySelector('#practice-question-footer-pc, .question-footer, [class*="footer"]') ||
-                   document.body;
+    const footer = document.querySelector('#practice-question-footer-pc, .question-footer, [class*="footer"]');
+    if (!footer) {
+      return;
+    }
 
     // Create save button
     const saveButton = document.createElement('button');
     saveButton.className = 'quiz-helper-save-btn';
     saveButton.textContent = '💾 Lưu đáp án';
     saveButton.type = 'button';
-    
+
     saveButton.addEventListener('click', () => {
       this.saveCurrentAnswer(questionPanel, saveButton);
     });
@@ -232,6 +260,7 @@ class QuizHelper {
     if (buttonContainer) {
       buttonContainer.appendChild(saveButton);
     }
+    DebugLogger.info('Save button added to question panel');
   }
 
   async saveCurrentAnswer(questionPanel, saveButton) {
@@ -241,17 +270,30 @@ class QuizHelper {
 
       // Extract question data when button is clicked
       const questionData = this.extractQuestionData(questionPanel);
+      DebugLogger.info('Extracted question data for saving', { questionData });
       if (!questionData) {
+        DebugLogger.warning('Cannot extract question data on save button click');
         throw new Error('Không thể lấy thông tin câu hỏi');
       }
 
       // Extract correct answer
-      const correctAnswer = this.extractCorrectAnswer(questionPanel);
+      const correctAnswer = this.extractCorrectAnswer();
       if (!correctAnswer) {
-        throw new Error('Không tìm thấy đáp án đúng');
+        DebugLogger.warning('Cannot find correct answer to save', { questionId: questionData.id });
+        saveButton.textContent = '❌ Chưa có đáp án đúng';
+        setTimeout(() => {
+          saveButton.textContent = '💾 Lưu đáp án';
+          saveButton.disabled = false;
+        }, 3000);
+        return;
       }
 
       questionData.correctAnswer = correctAnswer;
+
+      await DebugLogger.info('Saving answer for question', {
+        questionId: questionData.id,
+        correctAnswer
+      });
 
       // Save to storage via background script
       const response = await chrome.runtime.sendMessage({
@@ -260,6 +302,7 @@ class QuizHelper {
       });
 
       if (response?.success) {
+        await DebugLogger.info('Answer saved successfully', { questionId: questionData.id });
         saveButton.textContent = '✅ Đã lưu';
         saveButton.classList.add('saved');
         setTimeout(() => {
@@ -271,6 +314,7 @@ class QuizHelper {
         throw new Error('Lỗi khi lưu đáp án');
       }
     } catch (error) {
+      await DebugLogger.error('Error saving answer' + error.message);
       console.error('Error saving answer:', error);
       saveButton.textContent = `❌ ${error.message}`;
       setTimeout(() => {
@@ -280,11 +324,12 @@ class QuizHelper {
     }
   }
 
-  extractCorrectAnswer(questionPanel) {
+  extractCorrectAnswer() {
     // Look for the correct answer in various ways
-    const correctAnswerBox = questionPanel.querySelector('.correct-answer-box');
+    const correctAnswerBox = document.querySelector('.correct-answer-box');
     if (correctAnswerBox) {
       const text = correctAnswerBox.textContent;
+      DebugLogger.info('Extracted correct answer from correct-answer-box' + text);
       // Extract answer after "Câu trả lời chính xác là:"
       const match = text.match(/Câu trả lời chính xác là:\s*(.+)/);
       if (match) {
@@ -293,7 +338,7 @@ class QuizHelper {
     }
 
     // Look for selected correct answer
-    const correctOption = questionPanel.querySelector('.default-match input[type="radio"]');
+    const correctOption = document.querySelector('.default-match input[type="radio"]');
     if (correctOption) {
       const label = this.findAnswerLabel(correctOption);
       if (label) {
@@ -308,8 +353,10 @@ class QuizHelper {
     try {
       const response = await chrome.runtime.sendMessage({
         action: 'getAnswer',
-        questionHash: questionData.questionHash
+        questionId: questionData.id
       });
+
+      DebugLogger.info('Checked for saved answer' + questionData.id, { response });
 
       if (response?.found && response.data?.correctAnswer) {
         this.highlightCorrectAnswer(questionPanel, response.data.correctAnswer);
@@ -322,17 +369,17 @@ class QuizHelper {
 
   highlightCorrectAnswer(questionPanel, correctAnswerText) {
     const radioInputs = questionPanel.querySelectorAll('input[type="radio"]');
-    
+
     radioInputs.forEach(radio => {
       const labelText = this.findAnswerLabel(radio);
       if (labelText && this.isAnswerMatch(labelText, correctAnswerText)) {
         const answerContainer = radio.closest('.mc-text-question__radio-answer') ||
-                               radio.closest('[class*="answer"]') ||
-                               radio.parentElement;
-        
+          radio.closest('[class*="answer"]') ||
+          radio.parentElement;
+
         if (answerContainer) {
           answerContainer.classList.add('quiz-helper-suggested');
-          
+
           // Add suggestion icon
           if (!answerContainer.querySelector('.quiz-helper-icon')) {
             const icon = document.createElement('span');
@@ -352,7 +399,7 @@ class QuizHelper {
       .replace(/^\d+[-.)]\s*/, '') // Remove numbering
       .replace(/\s+/g, ' ')
       .trim();
-    
+
     return normalize(labelText) === normalize(correctAnswerText);
   }
 
@@ -365,11 +412,11 @@ class QuizHelper {
     const notice = document.createElement('div');
     notice.className = 'quiz-helper-notice';
     notice.innerHTML = '💡 <strong>Gợi ý:</strong> Đáp án được đánh dấu dựa trên lần trả lời trước';
-    
+
     const header = questionPanel.querySelector('.question-panel__header') ||
-                   questionPanel.querySelector('[class*="header"]') ||
-                   questionPanel.firstElementChild;
-    
+      questionPanel.querySelector('[class*="header"]') ||
+      questionPanel.firstElementChild;
+
     if (header) {
       header.appendChild(notice);
     }
@@ -378,7 +425,7 @@ class QuizHelper {
   removeAllButtons() {
     document.querySelectorAll('.quiz-helper-save-btn, .quiz-helper-notice, .quiz-helper-icon')
       .forEach(el => el.remove());
-    
+
     document.querySelectorAll('.quiz-helper-suggested')
       .forEach(el => el.classList.remove('quiz-helper-suggested'));
   }

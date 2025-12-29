@@ -20,7 +20,7 @@ class QuizHelperPopup {
     try {
       const result = await chrome.storage.local.get(['quizAnswers']);
       const answers = result.quizAnswers || {};
-      
+
       this.stats = {
         savedCount: Object.keys(answers).length,
         storageUsed: this.calculateStorageSize(answers)
@@ -81,6 +81,15 @@ class QuizHelperPopup {
     document.getElementById('clearBtn').addEventListener('click', () => {
       this.clearAllData();
     });
+
+    // Debug console buttons
+    document.getElementById('openDebugBtn').addEventListener('click', () => {
+      this.openDebugConsole();
+    });
+
+    document.getElementById('clearDebugBtn').addEventListener('click', () => {
+      this.clearDebugLogs();
+    });
   }
 
   updateUI() {
@@ -101,7 +110,7 @@ class QuizHelperPopup {
     this.extensionEnabled = !this.extensionEnabled;
     await chrome.storage.sync.set({ extensionEnabled: this.extensionEnabled });
     this.updateUI();
-    
+
     this.showStatus(
       this.extensionEnabled ? 'Extension đã được bật' : 'Extension đã được tắt',
       'success'
@@ -111,7 +120,7 @@ class QuizHelperPopup {
   async exportData() {
     try {
       const response = await chrome.runtime.sendMessage({ action: 'exportData' });
-      
+
       if (response.success) {
         document.getElementById('exportData').value = response.data;
         document.getElementById('exportArea').style.display = 'block';
@@ -152,7 +161,7 @@ class QuizHelperPopup {
 
   async processImport() {
     const data = document.getElementById('importData').value.trim();
-    
+
     if (!data) {
       this.showStatus('Vui lòng nhập dữ liệu', 'error');
       return;
@@ -193,14 +202,14 @@ class QuizHelperPopup {
     const data = document.getElementById('exportData').value;
     const blob = new Blob([data], { type: 'application/json' });
     const url = URL.createObjectURL(blob);
-    
+
     const a = document.createElement('a');
     a.href = url;
     a.download = `quiz-helper-backup-${new Date().toISOString().split('T')[0]}.json`;
     document.body.appendChild(a);
     a.click();
     document.body.removeChild(a);
-    
+
     URL.revokeObjectURL(url);
     this.showStatus('Tệp đã được tải xuống', 'success');
   }
@@ -211,10 +220,10 @@ class QuizHelperPopup {
         await chrome.storage.local.clear();
         await this.loadStats();
         this.updateUI();
-        
+
         document.getElementById('exportArea').style.display = 'none';
         document.getElementById('importArea').style.display = 'none';
-        
+
         this.showStatus('Đã xóa tất cả dữ liệu', 'success');
       } catch (error) {
         console.error('Clear error:', error);
@@ -228,10 +237,35 @@ class QuizHelperPopup {
     statusElement.className = `quiz-helper-status ${type}`;
     statusElement.textContent = message;
     statusElement.style.display = 'block';
-    
+
     setTimeout(() => {
       statusElement.style.display = 'none';
     }, 3000);
+  }
+
+  // Debug Console Methods
+  async openDebugConsole() {
+    try {
+      await chrome.runtime.sendMessage({
+        action: 'openDebugWindow'
+      });
+      this.showStatus('Debug console đã được mở trong cửa sổ riêng', 'success');
+    } catch (error) {
+      console.error('Error opening debug console:', error);
+      this.showStatus(`Lỗi khi mở debug console: ${error.message}`, 'error');
+    }
+  }
+
+  async clearDebugLogs() {
+    try {
+      await chrome.runtime.sendMessage({
+        action: 'clearDebugLogs'
+      });
+      this.showStatus('Debug logs đã được xóa', 'success');
+    } catch (error) {
+      console.error('Error clearing debug logs:', error);
+      this.showStatus(`Lỗi khi xóa debug logs: ${error.message}`, 'error');
+    }
   }
 }
 
