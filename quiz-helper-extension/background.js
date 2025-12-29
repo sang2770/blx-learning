@@ -14,7 +14,7 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     saveAnswer(request.questionData);
     sendResponse({ success: true });
   } else if (request.action === 'getAnswer') {
-    getAnswer(request.questionId, sendResponse);
+    getAnswer(request.questionTitle, sendResponse);
     return true; // Keep message channel open for async response
   } else if (request.action === 'exportData') {
     exportData(sendResponse);
@@ -42,14 +42,13 @@ async function saveAnswer(questionData) {
     const result = await chrome.storage.local.get(['quizAnswers']);
     const answers = result.quizAnswers || {};
 
-    answers[questionData.id] = {
-      title: questionData.title,
+    answers[questionData.title] = {
       correctAnswer: questionData.correctAnswer,
       timestamp: Date.now()
     };
 
     await chrome.storage.local.set({ quizAnswers: answers });
-    console.log('Answer saved:', questionData.id);
+    console.log('Answer saved:', questionData.title);
   } catch (error) {
     console.error('Error saving answer:', error);
   }
@@ -59,8 +58,6 @@ async function getAnswer(questionId, sendResponse) {
   try {
     const result = await chrome.storage.local.get(['quizAnswers']);
     const answers = result.quizAnswers || {};
-    console.log('Getting answer for questionId:', questionId, result, answers);
-
     if (answers[questionId]) {
       sendResponse({ found: true, data: answers[questionId] });
     } else {
@@ -79,10 +76,9 @@ async function exportData(sendResponse) {
 
     // Convert to new format if needed
     const exportData = {};
-    Object.keys(questions).forEach(id => {
-      const question = questions[id];
-      exportData[id] = {
-        title: question.title || question.question, // backward compatibility
+    Object.keys(questions).forEach(title => {
+      const question = questions[title];
+      exportData[title] = {
         correctAnswer: question.correctAnswer,
         timestamp: question.timestamp
       };
@@ -112,10 +108,10 @@ async function importData(importedData, sendResponse) {
       questionsToImport = data.questions;
     } else if (data.answers) {
       // Old format (v1.0) - convert to new format
-      Object.keys(data.answers).forEach(id => {
-        const oldAnswer = data.answers[id];
-        questionsToImport[id] = {
-          title: oldAnswer.question,
+      Object.keys(data.answers).forEach(key => {
+        const oldAnswer = data.answers[key];
+        const title = oldAnswer.question || oldAnswer.title || key;
+        questionsToImport[title] = {
           correctAnswer: oldAnswer.correctAnswer,
           timestamp: oldAnswer.timestamp
         };

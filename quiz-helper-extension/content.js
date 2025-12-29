@@ -79,7 +79,7 @@ class QuizHelper {
       mutations.forEach((mutation) => {
         mutation.addedNodes.forEach((node) => {
           if (node.nodeType === Node.ELEMENT_NODE) {
-            this.checkForQuestions(node);
+            this.checkForQuestions();
           }
         });
       });
@@ -101,15 +101,11 @@ class QuizHelper {
   }
 
   processExistingQuestions() {
-    this.checkForQuestions(document.body);
+    this.checkForQuestions();
   }
 
-  checkForQuestions(container) {
-    // Look for question panels based on the HTML structure
-    const questionPanel = container.querySelector('[id^="question-wrapper-id"]');
-    if (questionPanel) {
-      this.processQuestion(questionPanel);
-    }
+  checkForQuestions() {
+    this.processQuestion(document.body);
   }
 
   async processQuestion(questionPanel) {
@@ -129,7 +125,6 @@ class QuizHelper {
 
       // Try to extract basic question data for checking saved answers
       const questionData = this.extractQuestionData(questionPanel);
-      DebugLogger.info('Extracted question data', { questionId, questionData });
       if (questionData) {
         // Check for saved answer and highlight if found
         await this.checkAndHighlightSavedAnswer(questionPanel, questionData);
@@ -153,17 +148,8 @@ class QuizHelper {
       const questionText = this.extractQuestionText(questionPanel);
       if (!questionText) return null;
 
-      // Extract all answer options
-      const answers = this.extractAnswers(questionPanel);
-      if (answers.length === 0) return null;
-
-      // Generate a unique ID for the question
-      const questionId = this.extractQuestionId(questionPanel);
-
       return {
-        id: questionId,
-        title: questionText,
-        allAnswers: answers
+        title: questionText
       };
     } catch (error) {
       console.error('Error extracting question data:', error);
@@ -279,7 +265,7 @@ class QuizHelper {
       // Extract correct answer
       const correctAnswer = this.extractCorrectAnswer();
       if (!correctAnswer) {
-        DebugLogger.warning('Cannot find correct answer to save', { questionId: questionData.id });
+        DebugLogger.warning('Cannot find correct answer to save', { questionTitle: questionData.title });
         saveButton.textContent = '❌ Chưa có đáp án đúng';
         setTimeout(() => {
           saveButton.textContent = '💾 Lưu đáp án';
@@ -291,7 +277,7 @@ class QuizHelper {
       questionData.correctAnswer = correctAnswer;
 
       await DebugLogger.info('Saving answer for question', {
-        questionId: questionData.id,
+        questionTitle: questionData.title,
         correctAnswer
       });
 
@@ -302,7 +288,7 @@ class QuizHelper {
       });
 
       if (response?.success) {
-        await DebugLogger.info('Answer saved successfully', { questionId: questionData.id });
+        await DebugLogger.info('Answer saved successfully', { questionTitle: questionData.title });
         saveButton.textContent = '✅ Đã lưu';
         saveButton.classList.add('saved');
         setTimeout(() => {
@@ -353,10 +339,10 @@ class QuizHelper {
     try {
       const response = await chrome.runtime.sendMessage({
         action: 'getAnswer',
-        questionId: questionData.id
+        questionTitle: questionData.title
       });
 
-      DebugLogger.info('Checked for saved answer' + questionData.id, { response });
+      DebugLogger.info('Checked for saved answer', { questionTitle: questionData.title, response });
 
       if (response?.found && response.data?.correctAnswer) {
         this.highlightCorrectAnswer(questionPanel, response.data.correctAnswer);
