@@ -67,15 +67,10 @@ class QuizHelper {
 
   checkForQuestions(container) {
     // Look for question panels based on the HTML structure
-    const questionPanels = container.querySelectorAll ? 
-      container.querySelectorAll('.question-panel, [id^="question"]') : [];
-    
-    if (container.classList && (container.classList.contains('question-panel') || 
-        container.id?.startsWith('question'))) {
-      questionPanels.push(container);
+    const questionPanel = container.querySelector('[id^="question-wrapper-id"]');
+    if (questionPanel) {
+      this.processQuestion(questionPanel);
     }
-
-    questionPanels.forEach(panel => this.processQuestion(panel));
   }
 
   async processQuestion(questionPanel) {
@@ -85,18 +80,19 @@ class QuizHelper {
         return;
       }
 
+      alert('Đang xử lý câu hỏi: ' + questionId);
+
       this.processedQuestions.add(questionId);
       
+      // Always add save button
+      this.addSaveButton(questionPanel);
+
+      // Try to extract basic question data for checking saved answers
       const questionData = this.extractQuestionData(questionPanel);
-      if (!questionData) return;
-
-      // Add save button if question has answers
-      if (this.hasCorrectAnswer(questionPanel)) {
-        this.addSaveButton(questionPanel, questionData);
+      if (questionData) {
+        // Check for saved answer and highlight if found
+        await this.checkAndHighlightSavedAnswer(questionPanel, questionData);
       }
-
-      // Check for saved answer and highlight if found
-      await this.checkAndHighlightSavedAnswer(questionPanel, questionData);
       
     } catch (error) {
       console.error('Error processing question:', error);
@@ -210,7 +206,7 @@ class QuizHelper {
     return questionPanel.querySelector('.correct-answer-box, .default-match, [class*="correct"]') !== null;
   }
 
-  addSaveButton(questionPanel, questionData) {
+  addSaveButton(questionPanel) {
     // Check if save button already exists
     if (questionPanel.querySelector('.quiz-helper-save-btn')) {
       return;
@@ -227,7 +223,7 @@ class QuizHelper {
     saveButton.type = 'button';
     
     saveButton.addEventListener('click', () => {
-      this.saveCurrentAnswer(questionPanel, questionData, saveButton);
+      this.saveCurrentAnswer(questionPanel, saveButton);
     });
 
     // Add button next to existing buttons
@@ -237,10 +233,16 @@ class QuizHelper {
     }
   }
 
-  async saveCurrentAnswer(questionPanel, questionData, saveButton) {
+  async saveCurrentAnswer(questionPanel, saveButton) {
     try {
       saveButton.textContent = '⏳ Đang lưu...';
       saveButton.disabled = true;
+
+      // Extract question data when button is clicked
+      const questionData = this.extractQuestionData(questionPanel);
+      if (!questionData) {
+        throw new Error('Không thể lấy thông tin câu hỏi');
+      }
 
       // Extract correct answer
       const correctAnswer = this.extractCorrectAnswer(questionPanel);
@@ -269,11 +271,11 @@ class QuizHelper {
       }
     } catch (error) {
       console.error('Error saving answer:', error);
-      saveButton.textContent = '❌ Lỗi';
+      saveButton.textContent = `❌ ${error.message}`;
       setTimeout(() => {
         saveButton.textContent = '💾 Lưu đáp án';
         saveButton.disabled = false;
-      }, 2000);
+      }, 3000);
     }
   }
 
