@@ -22,8 +22,61 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   } else if (request.action === 'importData') {
     importData(request.data, sendResponse);
     return true;
+  } else if (request.action === 'addDebugLog') {
+    addDebugLog(request.log);
+    sendResponse({ success: true });
+  } else if (request.action === 'getDebugLogs') {
+    getDebugLogs(sendResponse);
+    return true;
+  } else if (request.action === 'clearDebugLogs') {
+    clearDebugLogs(sendResponse);
+    return true;
   }
 });
+
+// Debug logging functions
+async function addDebugLog(logEntry) {
+  try {
+    const result = await chrome.storage.local.get(['debugLogs']);
+    const logs = result.debugLogs || [];
+    
+    // Add timestamp if not present
+    if (!logEntry.timestamp) {
+      logEntry.timestamp = new Date().toISOString();
+    }
+    
+    logs.push(logEntry);
+    
+    // Keep only last 50 logs to prevent storage overflow
+    if (logs.length > 50) {
+      logs.splice(0, logs.length - 50);
+    }
+    
+    await chrome.storage.local.set({ debugLogs: logs });
+  } catch (error) {
+    console.error('Error saving debug log:', error);
+  }
+}
+
+async function getDebugLogs(sendResponse) {
+  try {
+    const result = await chrome.storage.local.get(['debugLogs']);
+    sendResponse({ success: true, logs: result.debugLogs || [] });
+  } catch (error) {
+    console.error('Error getting debug logs:', error);
+    sendResponse({ success: false, error: error.message });
+  }
+}
+
+async function clearDebugLogs(sendResponse) {
+  try {
+    await chrome.storage.local.remove(['debugLogs']);
+    sendResponse({ success: true });
+  } catch (error) {
+    console.error('Error clearing debug logs:', error);
+    sendResponse({ success: false, error: error.message });
+  }
+}
 
 async function saveAnswer(questionData) {
   try {

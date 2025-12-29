@@ -1,6 +1,8 @@
-// Popup script
+// Popup script - simplified to just open main window
 class QuizHelperPopup {
   constructor() {
+    this.extensionEnabled = true;
+    this.stats = { savedCount: 0, storageUsed: 0 };
     this.init();
   }
 
@@ -12,8 +14,13 @@ class QuizHelperPopup {
   }
 
   async loadSettings() {
-    const result = await chrome.storage.sync.get(['extensionEnabled']);
-    this.extensionEnabled = result.extensionEnabled !== false;
+    try {
+      const result = await chrome.storage.sync.get(['extensionEnabled']);
+      this.extensionEnabled = result.extensionEnabled !== false;
+    } catch (error) {
+      console.error('Error loading settings:', error);
+      this.extensionEnabled = true;
+    }
   }
 
   async loadStats() {
@@ -37,59 +44,40 @@ class QuizHelperPopup {
   }
 
   bindEvents() {
+    // Main window button
+    document.getElementById('openWindowBtn').addEventListener('click', () => {
+      this.openMainWindow();
+    });
+
     // Extension toggle
     document.getElementById('extensionToggle').addEventListener('click', () => {
       this.toggleExtension();
     });
 
-    // Export button
-    document.getElementById('exportBtn').addEventListener('click', () => {
-      this.exportData();
+    // Quick actions
+    document.getElementById('refreshBtn').addEventListener('click', () => {
+      this.refreshStats();
     });
 
-    // Import button
-    document.getElementById('importBtn').addEventListener('click', () => {
-      this.showImportArea();
-    });
-
-    // File import
-    document.getElementById('importFile').addEventListener('change', (e) => {
-      this.handleFileImport(e);
-    });
-
-    // Process import
-    document.getElementById('processImportBtn').addEventListener('click', () => {
-      this.processImport();
-    });
-
-    // Cancel import
-    document.getElementById('cancelImportBtn').addEventListener('click', () => {
-      this.hideImportArea();
-    });
-
-    // Copy button
-    document.getElementById('copyBtn').addEventListener('click', () => {
-      this.copyToClipboard();
-    });
-
-    // Download button
-    document.getElementById('downloadBtn').addEventListener('click', () => {
-      this.downloadData();
-    });
-
-    // Clear button
-    document.getElementById('clearBtn').addEventListener('click', () => {
-      this.clearAllData();
+    document.getElementById('helpBtn').addEventListener('click', () => {
+      this.showHelp();
     });
   }
 
   updateUI() {
     // Update toggle switch
     const toggle = document.getElementById('extensionToggle');
+    const statusIndicator = document.getElementById('statusIndicator');
+    const statusText = document.getElementById('statusText');
+
     if (this.extensionEnabled) {
       toggle.classList.add('active');
+      statusIndicator.className = 'status-indicator enabled';
+      statusText.textContent = '🟢 Extension đang hoạt động';
     } else {
       toggle.classList.remove('active');
+      statusIndicator.className = 'status-indicator disabled';
+      statusText.textContent = '🔴 Extension đã tắt';
     }
 
     // Update stats
@@ -97,141 +85,91 @@ class QuizHelperPopup {
     document.getElementById('storageUsed').textContent = `${this.stats.storageUsed} KB`;
   }
 
+  async openMainWindow() {
+    try {
+      // Create new window with the main interface
+      await chrome.windows.create({
+        url: chrome.runtime.getURL('window.html'),
+        type: 'popup',
+        width: 600,
+        height: 700,
+        focused: true
+      });
+      
+      // Close popup after opening main window
+      window.close();
+    } catch (error) {
+      console.error('Error opening main window:', error);
+      
+      // Fallback: try to open as tab if window creation fails
+      try {
+        await chrome.tabs.create({
+          url: chrome.runtime.getURL('window.html')
+        });
+        window.close();
+      } catch (tabError) {
+        console.error('Error opening as tab:', tabError);
+        alert('❌ Không thể mở cửa sổ chính. Vui lòng thử lại!');
+      }
+    }
+  }
+
   async toggleExtension() {
     this.extensionEnabled = !this.extensionEnabled;
-    await chrome.storage.sync.set({ extensionEnabled: this.extensionEnabled });
-    this.updateUI();
     
-    this.showStatus(
-      this.extensionEnabled ? 'Extension đã được bật' : 'Extension đã được tắt',
-      'success'
-    );
-  }
-
-  async exportData() {
     try {
-      const response = await chrome.runtime.sendMessage({ action: 'exportData' });
-      
-      if (response.success) {
-        document.getElementById('exportData').value = response.data;
-        document.getElementById('exportArea').style.display = 'block';
-        document.getElementById('importArea').style.display = 'none';
-        this.showStatus('Dữ liệu đã được xuất thành công', 'success');
-      } else {
-        throw new Error(response.error || 'Unknown error');
-      }
+      await chrome.storage.sync.set({ extensionEnabled: this.extensionEnabled });
+      this.updateUI();
     } catch (error) {
-      console.error('Export error:', error);
-      this.showStatus(`Lỗi xuất dữ liệu: ${error.message}`, 'error');
+      console.error('Error saving extension setting:', error);
+      // Revert the change if save failed
+      this.extensionEnabled = !this.extensionEnabled;
+      this.updateUI();
     }
   }
 
-  showImportArea() {
-    document.getElementById('importArea').style.display = 'block';
-    document.getElementById('exportArea').style.display = 'none';
-    document.getElementById('importData').value = '';
-    document.getElementById('importData').focus();
-  }
-
-  hideImportArea() {
-    document.getElementById('importArea').style.display = 'none';
-    document.getElementById('importData').value = '';
-  }
-
-  handleFileImport(event) {
-    const file = event.target.files[0];
-    if (file) {
-      const reader = new FileReader();
-      reader.onload = (e) => {
-        document.getElementById('importData').value = e.target.result;
-        this.showImportArea();
-      };
-      reader.readAsText(file);
-    }
-  }
-
-  async processImport() {
-    const data = document.getElementById('importData').value.trim();
+  async refreshStats() {
+    const refreshBtn = document.getElementById('refreshBtn');
+    const originalText = refreshBtn.textContent;
     
-    if (!data) {
-      this.showStatus('Vui lòng nhập dữ liệu', 'error');
-      return;
-    }
-
+    refreshBtn.textContent = '⏳';
+    refreshBtn.disabled = true;
+    
     try {
-      const response = await chrome.runtime.sendMessage({
-        action: 'importData',
-        data: data
-      });
-
-      if (response.success) {
-        this.hideImportArea();
-        await this.loadStats();
-        this.updateUI();
-        this.showStatus(`Đã nhập thành công ${response.count} câu hỏi`, 'success');
-      } else {
-        throw new Error(response.error || 'Unknown error');
-      }
+      await this.loadStats();
+      this.updateUI();
     } catch (error) {
-      console.error('Import error:', error);
-      this.showStatus(`Lỗi nhập dữ liệu: ${error.message}`, 'error');
+      console.error('Error refreshing stats:', error);
+    } finally {
+      refreshBtn.textContent = originalText;
+      refreshBtn.disabled = false;
     }
   }
 
-  async copyToClipboard() {
-    const data = document.getElementById('exportData').value;
-    try {
-      await navigator.clipboard.writeText(data);
-      this.showStatus('Đã copy vào clipboard', 'success');
-    } catch (error) {
-      console.error('Copy error:', error);
-      this.showStatus('Lỗi khi copy', 'error');
-    }
-  }
+  showHelp() {
+    const helpText = `🧠 Quiz Helper - Hướng dẫn sử dụng
 
-  downloadData() {
-    const data = document.getElementById('exportData').value;
-    const blob = new Blob([data], { type: 'application/json' });
-    const url = URL.createObjectURL(blob);
-    
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `quiz-helper-backup-${new Date().toISOString().split('T')[0]}.json`;
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    
-    URL.revokeObjectURL(url);
-    this.showStatus('Tệp đã được tải xuống', 'success');
-  }
+📝 Lưu đáp án:
+• Làm bài trắc nghiệm bình thường
+• Khi thấy đáp án đúng hiển thị → Nhấn "💾 Lưu đáp án"
 
-  async clearAllData() {
-    if (confirm('Bạn có chắc chắn muốn xóa tất cả dữ liệu đã lưu?\n\nHành động này không thể hoàn tác!')) {
-      try {
-        await chrome.storage.local.clear();
-        await this.loadStats();
-        this.updateUI();
-        
-        document.getElementById('exportArea').style.display = 'none';
-        document.getElementById('importArea').style.display = 'none';
-        
-        this.showStatus('Đã xóa tất cả dữ liệu', 'success');
-      } catch (error) {
-        console.error('Clear error:', error);
-        this.showStatus(`Lỗi khi xóa dữ liệu: ${error.message}`, 'error');
-      }
-    }
-  }
+💡 Gợi ý đáp án:
+• Gặp lại câu hỏi cũ → Đáp án được bôi vàng tự động
+• Icon 💡 báo hiệu có gợi ý
 
-  showStatus(message, type = 'info') {
-    const statusElement = document.getElementById('statusMessage');
-    statusElement.className = `quiz-helper-status ${type}`;
-    statusElement.textContent = message;
-    statusElement.style.display = 'block';
-    
-    setTimeout(() => {
-      statusElement.style.display = 'none';
-    }, 3000);
+🖥️ Bảng điều khiển:
+• Nhấn "Mở Bảng điều khiển" để truy cập đầy đủ
+• Xem debug logs, quản lý dữ liệu, thống kê chi tiết
+
+⚙️ Cài đặt:
+• Bật/tắt extension bằng switch
+• Tắt extension → Ẩn tất cả gợi ý
+
+💾 Sao lưu:
+• Xuất dữ liệu để backup
+• Nhập dữ liệu để phục hồi hoặc chia sẻ`;
+
+    alert(helpText);
   }
 }
 

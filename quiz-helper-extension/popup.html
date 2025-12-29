@@ -3,81 +3,192 @@
 <head>
   <meta charset="utf-8">
   <link rel="stylesheet" href="content.css">
+  <style>
+    .quiz-helper-popup {
+      width: 250px;
+      padding: 16px;
+      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+    }
+
+    .popup-header {
+      text-align: center;
+      margin-bottom: 16px;
+    }
+
+    .popup-title {
+      font-size: 16px;
+      font-weight: 600;
+      color: #333;
+      margin-bottom: 4px;
+    }
+
+    .popup-subtitle {
+      font-size: 12px;
+      color: #666;
+    }
+
+    .quick-stats {
+      background: #f8f9fa;
+      border-radius: 6px;
+      padding: 12px;
+      margin-bottom: 16px;
+      text-align: center;
+    }
+
+    .stat-item {
+      display: flex;
+      justify-content: space-between;
+      margin-bottom: 4px;
+      font-size: 12px;
+    }
+
+    .stat-value {
+      font-weight: 600;
+      color: #2196F3;
+    }
+
+    .main-button {
+      width: 100%;
+      background: linear-gradient(45deg, #2196F3, #21CBF3);
+      color: white;
+      border: none;
+      padding: 14px;
+      border-radius: 6px;
+      cursor: pointer;
+      font-size: 14px;
+      font-weight: 600;
+      margin-bottom: 12px;
+      box-shadow: 0 2px 8px rgba(33, 150, 243, 0.3);
+      transition: all 0.3s ease;
+    }
+
+    .main-button:hover {
+      transform: translateY(-1px);
+      box-shadow: 0 4px 12px rgba(33, 150, 243, 0.4);
+    }
+
+    .toggle-container {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      background: #f8f9fa;
+      padding: 10px 12px;
+      border-radius: 6px;
+      margin-bottom: 12px;
+    }
+
+    .toggle-label {
+      font-size: 13px;
+      color: #333;
+    }
+
+    .mini-switch {
+      position: relative;
+      width: 40px;
+      height: 20px;
+      background: #ccc;
+      border-radius: 10px;
+      cursor: pointer;
+      transition: background 0.3s;
+    }
+
+    .mini-switch.active {
+      background: #4CAF50;
+    }
+
+    .mini-switch-handle {
+      position: absolute;
+      top: 2px;
+      left: 2px;
+      width: 16px;
+      height: 16px;
+      background: white;
+      border-radius: 50%;
+      transition: transform 0.3s;
+    }
+
+    .mini-switch.active .mini-switch-handle {
+      transform: translateX(20px);
+    }
+
+    .status-indicator {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 8px;
+      border-radius: 4px;
+      font-size: 12px;
+      margin-bottom: 12px;
+    }
+
+    .status-indicator.enabled {
+      background: #d4edda;
+      color: #155724;
+    }
+
+    .status-indicator.disabled {
+      background: #f8d7da;
+      color: #721c24;
+    }
+
+    .quick-actions {
+      display: flex;
+      gap: 6px;
+    }
+
+    .quick-btn {
+      flex: 1;
+      background: #6c757d;
+      color: white;
+      border: none;
+      padding: 8px 6px;
+      border-radius: 4px;
+      cursor: pointer;
+      font-size: 11px;
+      transition: background 0.3s;
+    }
+
+    .quick-btn:hover {
+      background: #5a6268;
+    }
+  </style>
 </head>
 <body>
   <div class="quiz-helper-popup">
-    <div class="quiz-helper-header">
-      <h3>Quiz Helper - Trợ lý Đáp án</h3>
+    <div class="popup-header">
+      <div class="popup-title">🧠 Quiz Helper</div>
+      <div class="popup-subtitle">Trợ lý Đáp án Thông minh</div>
     </div>
-    
-    <div class="quiz-helper-content">
-      <!-- Extension Toggle -->
-      <div class="quiz-helper-toggle">
-        <span>Bật/Tắt Extension</span>
-        <div class="quiz-helper-switch" id="extensionToggle">
-          <div class="quiz-helper-switch-handle"></div>
-        </div>
-      </div>
 
-      <!-- Statistics -->
-      <div class="quiz-helper-stats">
-        <h4>Thống kê</h4>
-        <div class="quiz-helper-stat-item">
-          <span>Số câu hỏi đã lưu:</span>
-          <strong id="savedCount">0</strong>
-        </div>
-        <div class="quiz-helper-stat-item">
-          <span>Dung lượng sử dụng:</span>
-          <strong id="storageUsed">0 KB</strong>
-        </div>
+    <div class="quick-stats">
+      <div class="stat-item">
+        <span>Câu hỏi đã lưu:</span>
+        <span class="stat-value" id="savedCount">...</span>
       </div>
-
-      <!-- Data Management -->
-      <div class="quiz-helper-section">
-        <h4>Quản lý dữ liệu</h4>
-        
-        <button class="quiz-helper-button" id="exportBtn">
-          📤 Xuất dữ liệu
-        </button>
-        
-        <input type="file" class="quiz-helper-file-input" id="importFile" accept=".json" style="display: none;">
-        <button class="quiz-helper-button secondary" id="importBtn">
-          📥 Nhập dữ liệu
-        </button>
-        
-        <button class="quiz-helper-button danger" id="clearBtn">
-          🗑️ Xóa tất cả dữ liệu
-        </button>
+      <div class="stat-item">
+        <span>Dung lượng:</span>
+        <span class="stat-value" id="storageUsed">...</span>
       </div>
+    </div>
 
-      <!-- Export/Import Area -->
-      <div id="exportArea" style="display: none;">
-        <h4>Dữ liệu xuất</h4>
-        <textarea class="quiz-helper-textarea" id="exportData" readonly placeholder="Dữ liệu sẽ hiển thị ở đây..."></textarea>
-        <button class="quiz-helper-button secondary" id="copyBtn">📋 Copy</button>
-        <button class="quiz-helper-button secondary" id="downloadBtn">💾 Tải xuống</button>
+    <button class="main-button" id="openWindowBtn">
+      🖥️ Mở Bảng điều khiển
+    </button>
+
+    <div class="toggle-container">
+      <span class="toggle-label">Extension</span>
+      <div class="mini-switch" id="extensionToggle">
+        <div class="mini-switch-handle"></div>
       </div>
+    </div>
 
-      <div id="importArea" style="display: none;">
-        <h4>Nhập dữ liệu</h4>
-        <textarea class="quiz-helper-textarea" id="importData" placeholder="Dán dữ liệu JSON vào đây..."></textarea>
-        <button class="quiz-helper-button" id="processImportBtn">✅ Nhập</button>
-        <button class="quiz-helper-button secondary" id="cancelImportBtn">❌ Hủy</button>
-      </div>
+    <div class="status-indicator" id="statusIndicator">
+      <span id="statusText">Đang kiểm tra...</span>
+    </div>
 
-      <!-- Status Messages -->
-      <div id="statusMessage" style="display: none;"></div>
-
-      <!-- Help -->
-      <div class="quiz-helper-section" style="margin-top: 16px;">
-        <h4>Hướng dẫn</h4>
-        <p style="font-size: 12px; color: #666;">
-          • Khi thấy đáp án đúng, nhấn "💾 Lưu đáp án"<br>
-          • Lần sau gặp câu hỏi tương tự sẽ được tô vàng gợi ý<br>
-          • Xuất/nhập dữ liệu để sao lưu hoặc chia sẻ<br>
-          • Tắt extension để ẩn tất cả gợi ý
-        </p>
-      </div>
+    <div class="quick-actions">
+      <button class="quick-btn" id="refreshBtn" title="Làm mới thống kê">🔄</button>
+      <button class="quick-btn" id="helpBtn" title="Hướng dẫn">❓</button>
     </div>
   </div>
 

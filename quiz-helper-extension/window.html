@@ -1,0 +1,326 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>Quiz Helper - Trợ lý Đáp án</title>
+  <link rel="stylesheet" href="content.css">
+  <style>
+    body {
+      width: 500px;
+      min-height: 600px;
+      margin: 0;
+      padding: 20px;
+      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+      background: #f8f9fa;
+    }
+    
+    .window-header {
+      background: #2196F3;
+      color: white;
+      padding: 16px;
+      margin: -20px -20px 20px -20px;
+      text-align: center;
+      font-weight: 600;
+      font-size: 18px;
+    }
+    
+    .section {
+      background: white;
+      border-radius: 8px;
+      padding: 16px;
+      margin-bottom: 16px;
+      box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+    }
+    
+    .section h4 {
+      margin-top: 0;
+      margin-bottom: 12px;
+      color: #333;
+      font-size: 16px;
+    }
+    
+    .toggle-section {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 12px;
+      background: #f8f9fa;
+      border-radius: 6px;
+      margin-bottom: 16px;
+    }
+    
+    .switch {
+      position: relative;
+      width: 50px;
+      height: 24px;
+      background: #ccc;
+      border-radius: 12px;
+      cursor: pointer;
+      transition: background 0.3s;
+    }
+    
+    .switch.active {
+      background: #4CAF50;
+    }
+    
+    .switch-handle {
+      position: absolute;
+      top: 2px;
+      left: 2px;
+      width: 20px;
+      height: 20px;
+      background: white;
+      border-radius: 50%;
+      transition: transform 0.3s;
+    }
+    
+    .switch.active .switch-handle {
+      transform: translateX(26px);
+    }
+    
+    .stats-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 12px;
+      margin-bottom: 16px;
+    }
+    
+    .stat-card {
+      background: #f8f9fa;
+      border-radius: 6px;
+      padding: 12px;
+      text-align: center;
+    }
+    
+    .stat-value {
+      font-size: 24px;
+      font-weight: bold;
+      color: #2196F3;
+    }
+    
+    .stat-label {
+      font-size: 12px;
+      color: #666;
+      margin-top: 4px;
+    }
+    
+    .debug-container {
+      max-height: 300px;
+      overflow-y: auto;
+      background: #1e1e1e;
+      color: #fff;
+      padding: 12px;
+      border-radius: 6px;
+      font-family: 'Courier New', monospace;
+      font-size: 11px;
+    }
+    
+    .debug-log {
+      margin-bottom: 4px;
+      padding: 2px 4px;
+      border-left: 3px solid transparent;
+      word-break: break-word;
+    }
+    
+    .debug-log.info { border-left-color: #2196F3; color: #87CEEB; }
+    .debug-log.warn { border-left-color: #FF9800; color: #FFD700; }
+    .debug-log.error { border-left-color: #F44336; color: #FF6B6B; }
+    .debug-log.log { border-left-color: #4CAF50; color: #90EE90; }
+    
+    .debug-timestamp {
+      color: #888;
+      font-size: 10px;
+      margin-right: 8px;
+    }
+    
+    .btn {
+      background: #2196F3;
+      color: white;
+      border: none;
+      padding: 10px 16px;
+      border-radius: 4px;
+      cursor: pointer;
+      font-size: 14px;
+      transition: background 0.3s;
+      margin-right: 8px;
+      margin-bottom: 8px;
+    }
+    
+    .btn:hover {
+      background: #1976D2;
+    }
+    
+    .btn.secondary {
+      background: #6c757d;
+    }
+    
+    .btn.secondary:hover {
+      background: #5a6268;
+    }
+    
+    .btn.danger {
+      background: #dc3545;
+    }
+    
+    .btn.danger:hover {
+      background: #c82333;
+    }
+    
+    .btn.success {
+      background: #28a745;
+    }
+    
+    .btn.success:hover {
+      background: #218838;
+    }
+    
+    .textarea {
+      width: 100%;
+      height: 120px;
+      border: 1px solid #ddd;
+      border-radius: 4px;
+      padding: 8px;
+      font-family: monospace;
+      font-size: 12px;
+      resize: vertical;
+      margin-bottom: 8px;
+      box-sizing: border-box;
+    }
+    
+    .file-input {
+      width: 100%;
+      padding: 8px;
+      border: 1px solid #ddd;
+      border-radius: 4px;
+      margin-bottom: 8px;
+    }
+    
+    .status-message {
+      padding: 8px;
+      border-radius: 4px;
+      text-align: center;
+      font-size: 13px;
+      margin-bottom: 8px;
+      display: none;
+    }
+    
+    .status-message.success {
+      background: #d4edda;
+      color: #155724;
+      border: 1px solid #c3e6cb;
+    }
+    
+    .status-message.error {
+      background: #f8d7da;
+      color: #721c24;
+      border: 1px solid #f5c6cb;
+    }
+    
+    .status-message.info {
+      background: #d1ecf1;
+      color: #0c5460;
+      border: 1px solid #bee5eb;
+    }
+    
+    .help-text {
+      font-size: 12px;
+      color: #666;
+      line-height: 1.5;
+    }
+    
+    .debug-controls {
+      display: flex;
+      gap: 8px;
+      margin-bottom: 12px;
+      flex-wrap: wrap;
+    }
+  </style>
+</head>
+<body>
+  <div class="window-header">
+    🧠 Quiz Helper - Trợ lý Đáp án
+  </div>
+
+  <!-- Extension Toggle -->
+  <div class="section">
+    <div class="toggle-section">
+      <span><strong>Bật/Tắt Extension</strong></span>
+      <div class="switch" id="extensionToggle">
+        <div class="switch-handle"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Statistics -->
+  <div class="section">
+    <h4>📊 Thống kê</h4>
+    <div class="stats-grid">
+      <div class="stat-card">
+        <div class="stat-value" id="savedCount">0</div>
+        <div class="stat-label">Câu hỏi đã lưu</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-value" id="storageUsed">0 KB</div>
+        <div class="stat-label">Dung lượng sử dụng</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Debug Logs -->
+  <div class="section">
+    <h4>🐛 Debug Logs</h4>
+    <div class="debug-controls">
+      <button class="btn success" id="refreshLogsBtn">🔄 Refresh</button>
+      <button class="btn secondary" id="clearLogsBtn">🗑️ Clear</button>
+      <button class="btn secondary" id="exportLogsBtn">📁 Export</button>
+    </div>
+    <div class="debug-container" id="debugContainer">
+      <div id="debugLogsList">
+        <div style="color: #666;">Đang tải debug logs...</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Data Management -->
+  <div class="section">
+    <h4>💾 Quản lý dữ liệu</h4>
+    
+    <button class="btn" id="exportBtn">📤 Xuất dữ liệu</button>
+    <input type="file" class="file-input" id="importFile" accept=".json" style="display: none;">
+    <button class="btn secondary" id="importBtn">📥 Nhập dữ liệu</button>
+    <button class="btn danger" id="clearBtn">🗑️ Xóa tất cả dữ liệu</button>
+  </div>
+
+  <!-- Export/Import Areas -->
+  <div class="section" id="exportArea" style="display: none;">
+    <h4>📤 Dữ liệu xuất</h4>
+    <textarea class="textarea" id="exportData" readonly placeholder="Dữ liệu sẽ hiển thị ở đây..."></textarea>
+    <button class="btn secondary" id="copyBtn">📋 Copy</button>
+    <button class="btn secondary" id="downloadBtn">💾 Tải xuống</button>
+  </div>
+
+  <div class="section" id="importArea" style="display: none;">
+    <h4>📥 Nhập dữ liệu</h4>
+    <textarea class="textarea" id="importData" placeholder="Dán dữ liệu JSON vào đây..."></textarea>
+    <button class="btn success" id="processImportBtn">✅ Nhập</button>
+    <button class="btn secondary" id="cancelImportBtn">❌ Hủy</button>
+  </div>
+
+  <!-- Status Messages -->
+  <div id="statusMessage" class="status-message"></div>
+
+  <!-- Help -->
+  <div class="section">
+    <h4>📋 Hướng dẫn</h4>
+    <div class="help-text">
+      • <strong>Lưu đáp án:</strong> Khi thấy đáp án đúng, nhấn "💾 Lưu đáp án"<br>
+      • <strong>Gợi ý:</strong> Lần sau gặp câu hỏi tương tự sẽ được tô vàng<br>
+      • <strong>Debug:</strong> Theo dõi logs để hiểu extension hoạt động<br>
+      • <strong>Sao lưu:</strong> Xuất/nhập dữ liệu để bảo toàn hoặc chia sẻ<br>
+      • <strong>Điều khiển:</strong> Tắt extension để ẩn tất cả gợi ý
+    </div>
+  </div>
+
+  <script src="window.js"></script>
+</body>
+</html>
