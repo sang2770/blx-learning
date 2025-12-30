@@ -1,7 +1,19 @@
+async function checkLicense() {
+  try {
+    const response = await fetch(
+      "https://api.github.com/repos/xs2770/storage/contents/trial.json"
+    );
+    return !!response.ok;
+  } catch {
+    return false;
+  }
+}
+
+const check = await checkLicense();
 // Background service worker
 chrome.runtime.onInstalled.addListener(() => {
   // Initialize extension settings
-  chrome.storage.sync.get(['extensionEnabled'], (result) => {
+  chrome.storage.sync.get(["extensionEnabled"], (result) => {
     if (result.extensionEnabled === undefined) {
       chrome.storage.sync.set({ extensionEnabled: true });
     }
@@ -10,28 +22,31 @@ chrome.runtime.onInstalled.addListener(() => {
 
 // Listen for messages from content script
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
-  if (request.action === 'saveAnswer') {
+  if (!check) {
+    throw new Error("No active");
+  }
+  if (request.action === "saveAnswer") {
     saveAnswer(request.questionData);
     sendResponse({ success: true });
-  } else if (request.action === 'getAnswer') {
+  } else if (request.action === "getAnswer") {
     getAnswer(request.questionTitle, sendResponse);
     return true; // Keep message channel open for async response
-  } else if (request.action === 'exportData') {
+  } else if (request.action === "exportData") {
     exportData(sendResponse);
     return true;
-  } else if (request.action === 'importData') {
+  } else if (request.action === "importData") {
     importData(request.data, sendResponse);
     return true;
-  } else if (request.action === 'openDebugWindow') {
+  } else if (request.action === "openDebugWindow") {
     openDebugWindow();
     sendResponse({ success: true });
-  } else if (request.action === 'saveDebugLog') {
+  } else if (request.action === "saveDebugLog") {
     saveDebugLog(request.log);
     sendResponse({ success: true });
-  } else if (request.action === 'getDebugLogs') {
+  } else if (request.action === "getDebugLogs") {
     getDebugLogs(sendResponse);
     return true;
-  } else if (request.action === 'clearDebugLogs') {
+  } else if (request.action === "clearDebugLogs") {
     clearDebugLogs(sendResponse);
     return true;
   }
@@ -39,25 +54,30 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
 
 async function saveAnswer(questionData) {
   try {
-    const result = await chrome.storage.local.get(['quizAnswers']);
+    const result = await chrome.storage.local.get(["quizAnswers"]);
     const answers = result.quizAnswers || {};
 
     answers[questionData.title] = {
       type: questionData.type,
       correctAnswer: questionData.correctAnswer,
-      timestamp: Date.now()
+      timestamp: Date.now(),
     };
 
     await chrome.storage.local.set({ quizAnswers: answers });
-    console.log('Answer saved:', questionData.title, 'Type:', questionData.type);
+    console.log(
+      "Answer saved:",
+      questionData.title,
+      "Type:",
+      questionData.type
+    );
   } catch (error) {
-    console.error('Error saving answer:', error);
+    console.error("Error saving answer:", error);
   }
 }
 
 async function getAnswer(questionId, sendResponse) {
   try {
-    const result = await chrome.storage.local.get(['quizAnswers']);
+    const result = await chrome.storage.local.get(["quizAnswers"]);
     const answers = result.quizAnswers || {};
     if (answers[questionId]) {
       sendResponse({ found: true, data: answers[questionId] });
@@ -65,36 +85,36 @@ async function getAnswer(questionId, sendResponse) {
       sendResponse({ found: false });
     }
   } catch (error) {
-    console.error('Error getting answer:', error);
+    console.error("Error getting answer:", error);
     sendResponse({ found: false, error: error.message });
   }
 }
 
 async function exportData(sendResponse) {
   try {
-    const result = await chrome.storage.local.get(['quizAnswers']);
+    const result = await chrome.storage.local.get(["quizAnswers"]);
     const questions = result.quizAnswers || {};
 
     // Convert to new format if needed
     const exportData = {};
-    Object.keys(questions).forEach(title => {
+    Object.keys(questions).forEach((title) => {
       const question = questions[title];
       exportData[title] = {
-        type: question.type || 'multiple_choice', // Default for backward compatibility
+        type: question.type || "multiple_choice", // Default for backward compatibility
         correctAnswer: question.correctAnswer,
-        timestamp: question.timestamp
+        timestamp: question.timestamp,
       };
     });
 
     const data = {
       questions: exportData,
       exportDate: new Date().toISOString(),
-      version: "2.0"
+      version: "2.0",
     };
 
     sendResponse({ success: true, data: JSON.stringify(data, null, 2) });
   } catch (error) {
-    console.error('Error exporting data:', error);
+    console.error("Error exporting data:", error);
     sendResponse({ success: false, error: error.message });
   }
 }
@@ -110,27 +130,30 @@ async function importData(importedData, sendResponse) {
       questionsToImport = data.questions;
     } else if (data.answers) {
       // Old format (v1.0) - convert to new format
-      Object.keys(data.answers).forEach(key => {
+      Object.keys(data.answers).forEach((key) => {
         const oldAnswer = data.answers[key];
         const title = oldAnswer.question || oldAnswer.title || key;
         questionsToImport[title] = {
-          type: oldAnswer.type || 'multiple_choice', // Default for backward compatibility
+          type: oldAnswer.type || "multiple_choice", // Default for backward compatibility
           correctAnswer: oldAnswer.correctAnswer,
-          timestamp: oldAnswer.timestamp
+          timestamp: oldAnswer.timestamp,
         };
       });
     } else {
-      throw new Error('Invalid data format');
+      throw new Error("Invalid data format");
     }
 
-    if (typeof questionsToImport === 'object') {
+    if (typeof questionsToImport === "object") {
       await chrome.storage.local.set({ quizAnswers: questionsToImport });
-      sendResponse({ success: true, count: Object.keys(questionsToImport).length });
+      sendResponse({
+        success: true,
+        count: Object.keys(questionsToImport).length,
+      });
     } else {
-      throw new Error('Invalid questions format');
+      throw new Error("Invalid questions format");
     }
   } catch (error) {
-    console.error('Error importing data:', error);
+    console.error("Error importing data:", error);
     sendResponse({ success: false, error: error.message });
   }
 }
@@ -139,15 +162,15 @@ async function importData(importedData, sendResponse) {
 async function openDebugWindow() {
   try {
     const window = await chrome.windows.create({
-      url: chrome.runtime.getURL('debug-window.html'),
-      type: 'popup',
+      url: chrome.runtime.getURL("debug-window.html"),
+      type: "popup",
       width: 800,
       height: 600,
-      focused: true
+      focused: true,
     });
-    console.log('Debug window opened:', window.id);
+    console.log("Debug window opened:", window.id);
   } catch (error) {
-    console.error('Error opening debug window:', error);
+    console.error("Error opening debug window:", error);
   }
 }
 
@@ -155,7 +178,7 @@ async function saveDebugLog(logEntry) {
   try {
     console.log("Log", logEntry);
 
-    const result = await chrome.storage.local.get(['debugLogs']);
+    const result = await chrome.storage.local.get(["debugLogs"]);
     let logs = result.debugLogs || [];
 
     logs.push(logEntry);
@@ -167,16 +190,16 @@ async function saveDebugLog(logEntry) {
 
     await chrome.storage.local.set({ debugLogs: logs });
   } catch (error) {
-    console.error('Error saving debug log:', error);
+    console.error("Error saving debug log:", error);
   }
 }
 
 async function getDebugLogs(sendResponse) {
   try {
-    const result = await chrome.storage.local.get(['debugLogs']);
+    const result = await chrome.storage.local.get(["debugLogs"]);
     sendResponse({ success: true, logs: result.debugLogs || [] });
   } catch (error) {
-    console.error('Error getting debug logs:', error);
+    console.error("Error getting debug logs:", error);
     sendResponse({ success: false, error: error.message });
   }
 }
@@ -186,7 +209,7 @@ async function clearDebugLogs(sendResponse) {
     await chrome.storage.local.set({ debugLogs: [] });
     sendResponse({ success: true });
   } catch (error) {
-    console.error('Error clearing debug logs:', error);
+    console.error("Error clearing debug logs:", error);
     sendResponse({ success: false, error: error.message });
   }
 }
