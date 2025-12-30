@@ -43,12 +43,13 @@ async function saveAnswer(questionData) {
     const answers = result.quizAnswers || {};
 
     answers[questionData.title] = {
+      type: questionData.type,
       correctAnswer: questionData.correctAnswer,
       timestamp: Date.now()
     };
 
     await chrome.storage.local.set({ quizAnswers: answers });
-    console.log('Answer saved:', questionData.title);
+    console.log('Answer saved:', questionData.title, 'Type:', questionData.type);
   } catch (error) {
     console.error('Error saving answer:', error);
   }
@@ -79,6 +80,7 @@ async function exportData(sendResponse) {
     Object.keys(questions).forEach(title => {
       const question = questions[title];
       exportData[title] = {
+        type: question.type || 'multiple_choice', // Default for backward compatibility
         correctAnswer: question.correctAnswer,
         timestamp: question.timestamp
       };
@@ -112,6 +114,7 @@ async function importData(importedData, sendResponse) {
         const oldAnswer = data.answers[key];
         const title = oldAnswer.question || oldAnswer.title || key;
         questionsToImport[title] = {
+          type: oldAnswer.type || 'multiple_choice', // Default for backward compatibility
           correctAnswer: oldAnswer.correctAnswer,
           timestamp: oldAnswer.timestamp
         };

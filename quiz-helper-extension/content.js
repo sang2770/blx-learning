@@ -38,6 +38,7 @@ class QuizHelper {
     this.observerActive = false;
     this.addSaveButtonInterval = null;
     this.questionProcessedSet = new Set();
+    this.highlightedQuestion = null;
     this.init();
   }
 
@@ -144,9 +145,7 @@ class QuizHelper {
       if (!questionId) {
         return;
       }
-
       await DebugLogger.info(`Processing question: ${questionId}`);
-
       // Always add save button
       this.addSaveButtonInterval && clearInterval(this.addSaveButtonInterval);
       this.addSaveButtonInterval = setInterval(() => {
@@ -175,13 +174,27 @@ class QuizHelper {
 
   extractQuestionData(questionPanel) {
     try {
+      // Check if this is a simulation question
+      const isSimulationQuestion = this.isSimulationQuestion();
+
       // Extract question text
       const questionText = this.extractQuestionText(questionPanel);
       if (!questionText) return null;
 
-      return {
+      const questionData = {
         title: questionText,
+        type: isSimulationQuestion ? "simulation" : "multiple_choice",
       };
+
+      // For simulation questions, extract additional data
+      if (isSimulationQuestion) {
+        const simulationData = this.extractSimulationData(questionPanel);
+        if (simulationData) {
+          questionData.simulationData = simulationData;
+        }
+      }
+
+      return questionData;
     } catch (error) {
       console.error("Error extracting question data:", error);
       return null;
@@ -211,9 +224,76 @@ class QuizHelper {
     return null;
   }
 
+  // New method to check if current page is simulation question
+  isSimulationQuestion() {
+    const nameElement = document.querySelector(".learn-name__text");
+    if (nameElement) {
+      const text = nameElement.textContent?.toLowerCase() || "";
+      return text.includes("mô phỏng");
+    }
+    return false;
+  }
+
+  // New method to extract simulation-specific data
+  extractSimulationData(questionPanel) {
+    try {
+      const trackingBar = questionPanel.querySelector(
+        ".media-audio-tracking-bar-line--invisible"
+      );
+      if (!trackingBar) return null;
+
+      const marks = trackingBar.querySelectorAll(
+        ".media-audio-tracking-bar__mark:not(.media-audio-tracking-bar__mark--no-highlight)"
+      );
+      if (marks.length === 0) return null;
+
+      // Extract positions and widths from style attribute
+      const positions = [];
+      let totalWidth = 0;
+      
+      marks.forEach((mark) => {
+        const style = mark.getAttribute("style") || "";
+        const leftMatch = style.match(/left:\s*([\d.]+)%/);
+        const paddingRightMatch = style.match(/padding-right:\s*([\d.]+)%/);
+        
+        if (leftMatch) {
+          const leftPos = parseFloat(leftMatch[1]);
+          const paddingRight = paddingRightMatch ? parseFloat(paddingRightMatch[1]) : 0;
+          
+          positions.push({
+            left: leftPos,
+            paddingRight: paddingRight,
+            right: leftPos + paddingRight
+          });
+          
+          totalWidth += paddingRight;
+        }
+      });
+
+      if (positions.length === 0) return null;
+
+      // Calculate start and end of optimal range more accurately
+      const startPosition = Math.min(...positions.map(p => p.left));
+      const endPosition = Math.max(...positions.map(p => p.right));
+
+      return {
+        startPosition,
+        endPosition,
+        totalMarks: positions.length,
+        totalWidth,
+        positions,
+      };
+    } catch (error) {
+      console.error("Error extracting simulation data:", error);
+      return null;
+    }
+  }
+
   extractQuestionId() {
     // Example: extract data-question-id attributes
-    const questionElement = document.querySelector('div[id*="question-wrapper-id-"]');
+    const questionElement = document.querySelector(
+      'div[id*="question-wrapper-id-"]'
+    );
     return questionElement?.id ?? null;
   }
 
@@ -281,6 +361,7 @@ class QuizHelper {
         return;
       }
       this.questionProcessedSet.add(questionData.title);
+
       // Extract correct answer
       const correctAnswer = this.extractCorrectAnswer();
       if (!correctAnswer) {
@@ -290,17 +371,23 @@ class QuizHelper {
         return;
       }
 
-      questionData.correctAnswer = correctAnswer;
+      // Prepare data for saving with unified format
+      const saveData = {
+        title: questionData.title,
+        type: questionData.type,
+        correctAnswer: correctAnswer,
+      };
 
       await DebugLogger.info("Saving answer for question", {
         questionTitle: questionData.title,
+        type: questionData.type,
         correctAnswer,
       });
 
       // Save to storage via background script
       const response = await chrome.runtime.sendMessage({
         action: "saveAnswer",
-        questionData,
+        questionData: saveData,
       });
 
       if (response?.success) {
@@ -317,7 +404,12 @@ class QuizHelper {
   }
 
   extractCorrectAnswer() {
-    // Look for the correct answer in various ways
+    // Check if this is simulation question first
+    if (this.isSimulationQuestion()) {
+      return this.extractSimulationAnswer();
+    }
+
+    // Look for the correct answer in various ways (existing logic for multiple choice)
     const correctAnswerBox = document.querySelector(".correct-answer-box");
     if (correctAnswerBox) {
       const text = correctAnswerBox.textContent;
@@ -345,8 +437,52 @@ class QuizHelper {
     return null;
   }
 
+  // New method to extract simulation answer
+  extractSimulationAnswer() {
+    try {
+      // Get simulation data to determine optimal range
+      const simulationData = this.extractSimulationData(document.body);
+      if (simulationData) {
+        return {
+          startPosition: simulationData.startPosition,
+          endPosition: simulationData.endPosition,
+        };
+      }
+
+      return null;
+    } catch (error) {
+      console.error("Error extracting simulation answer:", error);
+      return null;
+    }
+  }
+
+  // Helper method to get video duration
+  getVideoDuration() {
+    try {
+      const durationElement = document.querySelector(
+        ".d-flex-center-middle.border"
+      );
+      if (durationElement) {
+        const text = durationElement.textContent || "";
+        const parts = text.split("/");
+        if (parts.length === 2) {
+          return parseFloat(parts[1].trim());
+        }
+      }
+      return null;
+    } catch (error) {
+      return null;
+    }
+  }
+
   async checkAndHighlightSavedAnswer(questionPanel, questionData) {
     try {
+      // Prevent multiple calls for the same question
+      const questionKey = questionData.title;
+      if (this.highlightedQuestion === questionKey) {
+        return;
+      }
+
       const response = await chrome.runtime.sendMessage({
         action: "getAnswer",
         questionTitle: questionData.title,
@@ -358,11 +494,162 @@ class QuizHelper {
       });
 
       if (response?.found && response.data?.correctAnswer) {
-        this.highlightCorrectAnswer(questionPanel, response.data.correctAnswer);
-        // this.showSuggestionNotice(questionPanel);
+        // Mark as highlighted to prevent duplicates
+        this.highlightedQuestion = questionKey;
+
+        if (questionData.type === "simulation") {
+          this.highlightSimulationAnswer(
+            questionPanel,
+            response.data.correctAnswer
+          );
+        } else {
+          this.highlightCorrectAnswer(
+            questionPanel,
+            response.data.correctAnswer
+          );
+        }
       }
     } catch (error) {
       console.error("Error checking saved answer:", error);
+    }
+  }
+
+  // New method to highlight simulation answers
+  highlightSimulationAnswer(questionPanel, correctAnswer) {
+    try {
+      // For simulation questions, correctAnswer contains startPosition and endPosition
+      if (!correctAnswer || typeof correctAnswer !== "object") return;
+
+      // Check if already highlighted to avoid duplicates
+      const existingHighlight = questionPanel.querySelector(
+        ".quiz-helper-tracking-highlight"
+      );
+      const existingNotice = questionPanel.querySelector(
+        ".quiz-helper-simulation-notice"
+      );
+
+      if (existingHighlight && existingNotice) {
+        return; // Already highlighted, skip
+      }
+
+      // Show optimal timing information
+      if (!existingNotice) {
+        const noticeContainer = this.createSimulationNotice(correctAnswer);
+
+        // Try to insert notice near video controls
+        const videoActions = questionPanel.querySelector(
+          ".question-video__actions"
+        );
+        if (videoActions && noticeContainer) {
+          videoActions.insertBefore(noticeContainer, videoActions.firstChild);
+        }
+      }
+
+      // Highlight the tracking bar with optimal range
+      if (
+        !existingHighlight &&
+        correctAnswer.startPosition &&
+        correctAnswer.endPosition
+      ) {
+        this.highlightTrackingBar(questionPanel, {
+          start: correctAnswer.startPosition,
+          end: correctAnswer.endPosition,
+        });
+      }
+    } catch (error) {
+      console.error("Error highlighting simulation answer:", error);
+    }
+  }
+
+  // Create notice for simulation questions
+  createSimulationNotice(answerData) {
+    // Remove existing notices first to avoid duplicates
+    const existingNotices = document.querySelectorAll(
+      ".quiz-helper-simulation-notice"
+    );
+    existingNotices.forEach((el) => el.remove());
+
+    const notice = document.createElement("div");
+    notice.className = "quiz-helper-simulation-notice";
+    notice.style.cssText = `
+      background: #e6f7ff;
+      border: 1px solid #91d5ff;
+      border-radius: 4px;
+      padding: 10px;
+      margin-bottom: 10px;
+      font-size: 14px;
+    `;
+
+    let content = "💡 <strong>Gợi ý từ lần trước:</strong><br>";
+
+    if (answerData.startPosition && answerData.endPosition) {
+      const totalDuration = this.getVideoDuration() || 30;
+      const startTime = (
+        (answerData.startPosition / 100) *
+        totalDuration
+      ).toFixed(2);
+      const endTime = ((answerData.endPosition / 100) * totalDuration).toFixed(
+        2
+      );
+      content += `Vùng tối ưu: <strong>${startTime}s - ${endTime}s</strong>`;
+      content += `<br><small>Khu vực: ${answerData.startPosition.toFixed(1)}% - ${answerData.endPosition.toFixed(1)}%</small>`;
+    }
+
+    notice.innerHTML = content;
+    return notice;
+  }
+
+  // Highlight tracking bar for simulation questions
+  highlightTrackingBar(questionPanel, optimalRange) {
+    try {
+      const trackingBar = questionPanel.querySelector(
+        ".media-audio-tracking-bar-line"
+      );
+      if (!trackingBar) return;
+
+      // Remove existing highlights in this specific question panel to avoid duplicates
+      const existingHighlights = questionPanel.querySelectorAll(
+        ".quiz-helper-tracking-highlight"
+      );
+      existingHighlights.forEach((el) => el.remove());
+
+      // Calculate accurate width
+      const startPos = optimalRange.start;
+      const endPos = optimalRange.end;
+      const width = endPos - startPos;
+
+      // Create highlight overlay
+      const highlight = document.createElement("div");
+      highlight.className = "quiz-helper-tracking-highlight";
+      highlight.style.cssText = `
+        position: absolute;
+        height: 15px;
+        background: rgba(0, 255, 0, 0.6);
+        border: 1px solid #00ff00;
+        border-radius: 2px;
+        pointer-events: none;
+        left: ${startPos}%;
+        width: ${width}%;
+        top: -2px;
+        z-index: 10;
+      `;
+
+      // Add debug info
+      console.log('Highlight tracking bar:', {
+        startPos: startPos + '%',
+        endPos: endPos + '%', 
+        width: width + '%',
+        calculatedWidth: width
+      });
+
+      // Make tracking bar container relative if needed
+      if (trackingBar.style.position !== "relative") {
+        trackingBar.style.position = "relative";
+      }
+
+      trackingBar.appendChild(highlight);
+    } catch (error) {
+      console.error("Error highlighting tracking bar:", error);
     }
   }
 
@@ -427,9 +714,11 @@ class QuizHelper {
   }
 
   removeAllButtons() {
+    // Clear tracking sets
+    this.highlightedQuestion = null;
     document
       .querySelectorAll(
-        ".quiz-helper-save-btn, .quiz-helper-notice, .quiz-helper-icon"
+        ".quiz-helper-save-btn, .quiz-helper-notice, .quiz-helper-icon, .quiz-helper-simulation-notice, .quiz-helper-tracking-highlight"
       )
       .forEach((el) => el.remove());
 
