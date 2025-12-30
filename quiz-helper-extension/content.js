@@ -189,6 +189,7 @@ class QuizHelper {
   }
 
   extractQuestionText(questionPanel) {
+    const id = this.extractQuestionId(questionPanel);
     // Try multiple selectors to find question text
     const selectors = [
       ".question-content",
@@ -202,12 +203,18 @@ class QuizHelper {
       if (element) {
         const text = element.textContent?.trim();
         if (text && text.length > 10) {
-          return text;
+          return id + "_" + text;
         }
       }
     }
 
     return null;
+  }
+
+  extractQuestionId() {
+    // Example: extract data-question-id attributes
+    const questionElement = document.querySelector('div[id*="question-wrapper-id-"]');
+    return questionElement?.id ?? null;
   }
 
   extractAnswers(questionPanel) {
