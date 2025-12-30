@@ -1,3 +1,4 @@
+let licenseActive = false; // Hàm kiểm tra license
 async function checkLicense() {
   try {
     const response = await fetch(
@@ -8,21 +9,20 @@ async function checkLicense() {
     return false;
   }
 }
-
-const check = await checkLicense();
 // Background service worker
-chrome.runtime.onInstalled.addListener(() => {
+chrome.runtime.onInstalled.addListener(async () => {
   // Initialize extension settings
   chrome.storage.sync.get(["extensionEnabled"], (result) => {
     if (result.extensionEnabled === undefined) {
       chrome.storage.sync.set({ extensionEnabled: true });
     }
   });
+  licenseActive = await checkLicense();
 });
 
 // Listen for messages from content script
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
-  if (!check) {
+  if (!licenseActive) {
     throw new Error("No active");
   }
   if (request.action === "saveAnswer") {
