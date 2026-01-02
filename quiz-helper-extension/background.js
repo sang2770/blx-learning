@@ -1,14 +1,3 @@
-let licenseActive = false; // Hàm kiểm tra license
-async function checkLicense() {
-  try {
-    const response = await fetch(
-      "https://api.github.com/repos/xs2770/storage/contents/trial.json"
-    );
-    return !!response.ok;
-  } catch {
-    return false;
-  }
-}
 // Background service worker
 chrome.runtime.onInstalled.addListener(async () => {
   // Initialize extension settings
@@ -17,19 +6,15 @@ chrome.runtime.onInstalled.addListener(async () => {
       chrome.storage.sync.set({ extensionEnabled: true });
     }
   });
-  licenseActive = await checkLicense();
 });
 
 // Listen for messages from content script
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
-  if (!licenseActive) {
-    throw new Error("No active");
-  }
   if (request.action === "saveAnswer") {
     saveAnswer(request.questionData);
     sendResponse({ success: true });
   } else if (request.action === "getAnswer") {
-    getAnswer(request.questionTitle, sendResponse);
+    getAnswer(request.questionTitle, sendResponse, request.backupTitle);
     return true; // Keep message channel open for async response
   } else if (request.action === "exportData") {
     exportData(sendResponse);
@@ -75,12 +60,19 @@ async function saveAnswer(questionData) {
   }
 }
 
-async function getAnswer(questionId, sendResponse) {
+async function getAnswer(questionId, sendResponse, backupTitle = null) {
   try {
     const result = await chrome.storage.local.get(["quizAnswers"]);
     const answers = result.quizAnswers || {};
     if (answers[questionId]) {
       sendResponse({ found: true, data: answers[questionId] });
+    } else if (backupTitle) {
+      const findByBackup = Object.keys(answers).find((key => key.includes(backupTitle)));
+      if (findByBackup) {
+        sendResponse({ found: true, data: answers[findByBackup] });
+      } else {
+        sendResponse({ found: false });
+      }
     } else {
       sendResponse({ found: false });
     }
@@ -96,10 +88,10 @@ async function exportData(sendResponse) {
     const questions = result.quizAnswers || {};
 
     // Convert to new format if needed
-    const exportData = {};
+    const formattedData = {};
     Object.keys(questions).forEach((title) => {
       const question = questions[title];
-      exportData[title] = {
+      formattedData[title] = {
         type: question.type || "multiple_choice", // Default for backward compatibility
         correctAnswer: question.correctAnswer,
         timestamp: question.timestamp,
@@ -107,7 +99,7 @@ async function exportData(sendResponse) {
     });
 
     const data = {
-      questions: exportData,
+      questions: formattedData,
       exportDate: new Date().toISOString(),
       version: "2.0",
     };

@@ -486,6 +486,7 @@ class QuizHelper {
       const response = await chrome.runtime.sendMessage({
         action: "getAnswer",
         questionTitle: questionData.title,
+        backupTitle: questionData.title.split("_")[1] || null,
       });
 
       DebugLogger.info("Checked for saved answer", {
