@@ -110,11 +110,6 @@ class QuizHelperPopup {
     this.extensionEnabled = !this.extensionEnabled;
     await chrome.storage.sync.set({ extensionEnabled: this.extensionEnabled });
     this.updateUI();
-
-    this.showStatus(
-      this.extensionEnabled ? 'Extension đã được bật' : 'Extension đã được tắt',
-      'success'
-    );
   }
 
   async exportData() {

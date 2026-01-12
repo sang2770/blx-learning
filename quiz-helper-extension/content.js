@@ -39,6 +39,14 @@ class QuizHelper {
     this.addSaveButtonInterval = null;
     this.questionProcessedSet = new Set();
     this.highlightedQuestion = null;
+    this.autoMode = false;
+    this.autoDelay = 2000; // Default 2 seconds
+    this.autoTimeout = null;
+    this.wrongAnswerCount = 0; // Number of wrong answers to select
+    this.wrongAnswersSelected = 0; // Track how many wrong answers selected
+    this.questionCount = 0; // Track question count for wrong answer logic
+    this.simulationMonitoringActive = false; // Track if simulation monitoring is active
+    this.simulationAnimationId = null; // Store animation frame ID for cleanup
     this.init();
   }
 
@@ -48,15 +56,24 @@ class QuizHelper {
     });
 
     // Check if extension is enabled
-    const result = await chrome.storage.sync.get(["extensionEnabled"]);
+    const result = await chrome.storage.sync.get(["extensionEnabled", "autoDelay", "wrongAnswerCount"]);
     this.isEnabled = result.extensionEnabled !== false;
+    this.autoDelay = result.autoDelay || 2000;
+    this.wrongAnswerCount = result.wrongAnswerCount || 0;
 
     await DebugLogger.info(`Extension enabled status: ${this.isEnabled}`);
 
     if (this.isEnabled) {
       this.startObserver();
       this.processExistingQuestions();
+      this.createAutoButton();
     }
+
+    // Add message listener for popup communication
+    chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
+      this.handleMessage(request, sender, sendResponse);
+      return true; // Keep channel open for async responses
+    });
 
     // Listen for extension toggle
     chrome.storage.onChanged.addListener((changes) => {
@@ -68,10 +85,22 @@ class QuizHelper {
         if (this.isEnabled) {
           this.startObserver();
           this.processExistingQuestions();
+          this.createAutoButton();
         } else {
           this.stopObserver();
           this.removeAllButtons();
+          this.stopAutoMode();
         }
+      }
+      if (changes.autoDelay) {
+        this.autoDelay = changes.autoDelay.newValue;
+        DebugLogger.info(`Auto delay updated to: ${this.autoDelay}ms`);
+        this.updateAutoButtonDelay();
+      }
+      if (changes.wrongAnswerCount) {
+        this.wrongAnswerCount = changes.wrongAnswerCount.newValue;
+        DebugLogger.info(`Wrong answer count updated to: ${this.wrongAnswerCount}`);
+        this.updateWrongAnswerButton();
       }
     });
   }
@@ -136,6 +165,566 @@ class QuizHelper {
         this.saveQuestionAnswer.bind(this),
         true
       );
+    }
+  }
+
+  createAutoButton() {
+    // Remove existing auto button to avoid duplicates
+    const existingButton = document.querySelector(".quiz-helper-auto-btn");
+    const existingConfig = document.querySelector(".quiz-helper-config-btn");
+    if (existingButton) existingButton.remove();
+    if (existingConfig) existingConfig.remove();
+
+    // Create auto button container
+    const buttonContainer = document.createElement("div");
+    buttonContainer.className = "quiz-helper-auto-container";
+    buttonContainer.style.cssText = `
+      position: fixed;
+      bottom: 20px;
+      right: 20px;
+      z-index: 10000;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+    `;
+
+    // Auto button
+    const autoButton = document.createElement("button");
+    autoButton.className = "quiz-helper-auto-btn";
+    autoButton.textContent = this.autoMode ? "⏹️ Dừng Auto" : "🤖 Auto làm bài";
+    autoButton.style.cssText = `
+      padding: 12px 16px;
+      background: ${this.autoMode ? '#dc3545' : '#007bff'};
+      color: white;
+      border: none;
+      border-radius: 6px;
+      cursor: pointer;
+      font-size: 14px;
+      font-weight: bold;
+      box-shadow: 0 4px 12px rgba(0,0,0,0.2);
+      transition: all 0.3s ease;
+      min-width: 140px;
+      text-align: center;
+    `;
+
+    autoButton.addEventListener("click", () => {
+      if (this.autoMode) {
+        this.stopAutoMode();
+      } else {
+        this.startAutoMode();
+      }
+    });
+
+    // Config delay button
+    const configButton = document.createElement("button");
+    configButton.className = "quiz-helper-config-btn";
+    configButton.textContent = `⚙️ ${this.autoDelay / 1000}s`;
+    configButton.style.cssText = `
+      padding: 8px 12px;
+      background: #6c757d;
+      color: white;
+      border: none;
+      border-radius: 4px;
+      cursor: pointer;
+      font-size: 12px;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.2);
+      transition: all 0.3s ease;
+      text-align: center;
+    `;
+
+    configButton.addEventListener("click", () => {
+      this.showDelayConfig();
+    });
+
+    // Wrong answer config button
+    const wrongAnswerButton = document.createElement("button");
+    wrongAnswerButton.className = "quiz-helper-wrong-btn";
+    wrongAnswerButton.textContent = `❌ ${this.wrongAnswerCount}`;
+    wrongAnswerButton.style.cssText = `
+      padding: 8px 12px;
+      background: ${this.wrongAnswerCount > 0 ? '#dc3545' : '#6c757d'};
+      color: white;
+      border: none;
+      border-radius: 4px;
+      cursor: pointer;
+      font-size: 12px;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.2);
+      transition: all 0.3s ease;
+      text-align: center;
+    `;
+
+    wrongAnswerButton.addEventListener("click", () => {
+      this.showWrongAnswerConfig();
+    });
+
+    // Add hover effects
+    autoButton.addEventListener("mouseenter", () => {
+      autoButton.style.transform = "translateY(-2px)";
+      autoButton.style.boxShadow = "0 6px 16px rgba(0,0,0,0.3)";
+    });
+    autoButton.addEventListener("mouseleave", () => {
+      autoButton.style.transform = "translateY(0)";
+      autoButton.style.boxShadow = "0 4px 12px rgba(0,0,0,0.2)";
+    });
+
+    configButton.addEventListener("mouseenter", () => {
+      configButton.style.transform = "translateY(-1px)";
+    });
+    configButton.addEventListener("mouseleave", () => {
+      configButton.style.transform = "translateY(0)";
+    });
+
+    wrongAnswerButton.addEventListener("mouseenter", () => {
+      wrongAnswerButton.style.transform = "translateY(-1px)";
+    });
+    wrongAnswerButton.addEventListener("mouseleave", () => {
+      wrongAnswerButton.style.transform = "translateY(0)";
+    });
+
+    buttonContainer.appendChild(autoButton);
+    buttonContainer.appendChild(configButton);
+    buttonContainer.appendChild(wrongAnswerButton);
+    document.body.appendChild(buttonContainer);
+  }
+
+  showDelayConfig() {
+    const newDelay = prompt(`Nhập thời gian delay (giây) giữa các lần làm bài:`, this.autoDelay / 1000);
+    if (newDelay && !isNaN(newDelay) && newDelay > 0) {
+      this.autoDelay = parseFloat(newDelay) * 1000;
+      chrome.storage.sync.set({ autoDelay: this.autoDelay });
+      this.updateAutoButtonDelay();
+      DebugLogger.info(`Auto delay configured to: ${this.autoDelay}ms`);
+    }
+  }
+
+  showWrongAnswerConfig() {
+    const newCount = prompt(`Nhập số câu trả lời sai (0-50):`, this.wrongAnswerCount);
+    if (newCount !== null && !isNaN(newCount) && newCount >= 0 && newCount <= 50) {
+      this.wrongAnswerCount = parseInt(newCount);
+      chrome.storage.sync.set({ wrongAnswerCount: this.wrongAnswerCount });
+      this.updateWrongAnswerButton();
+      DebugLogger.info(`Wrong answer count configured to: ${this.wrongAnswerCount}`);
+    }
+  }
+
+  updateAutoButtonDelay() {
+    const configBtn = document.querySelector(".quiz-helper-config-btn");
+    if (configBtn) {
+      configBtn.textContent = `⚙️ ${this.autoDelay / 1000}s`;
+    }
+  }
+
+  updateWrongAnswerButton() {
+    const wrongBtn = document.querySelector(".quiz-helper-wrong-btn");
+    if (wrongBtn) {
+      wrongBtn.textContent = `❌ ${this.wrongAnswerCount}`;
+      wrongBtn.style.background = this.wrongAnswerCount > 0 ? '#dc3545' : '#6c757d';
+    }
+  }
+
+  updateAutoButton() {
+    const autoBtn = document.querySelector(".quiz-helper-auto-btn");
+    if (autoBtn) {
+      if (this.autoMode) {
+        autoBtn.textContent = "⏹️ Dừng Auto";
+        autoBtn.style.background = "#dc3545";
+      } else {
+        autoBtn.textContent = "🤖 Auto làm bài";
+        autoBtn.style.background = "#007bff";
+      }
+    }
+  }
+
+  // Handle messages from popup
+  handleMessage(request, sender, sendResponse) {
+    switch (request.action) {
+      case 'getAutoModeStatus':
+        sendResponse({ autoMode: this.autoMode });
+        break;
+      case 'startAutoMode':
+        this.startAutoMode();
+        sendResponse({ success: true });
+        break;
+      case 'stopAutoMode':
+        this.stopAutoMode();
+        sendResponse({ success: true });
+        break;
+      case 'updateAutoDelay':
+        this.autoDelay = request.delay;
+        sendResponse({ success: true });
+        break;
+      default:
+        sendResponse({ error: 'Unknown action' });
+    }
+  }
+
+  async startAutoMode() {
+    this.autoMode = true;
+    this.questionCount = 0; // Reset question count when starting auto mode
+    this.wrongAnswersSelected = 0; // Reset wrong answers counter
+    await DebugLogger.info("Auto mode started");
+    this.updateAutoButton();
+    // Start auto process
+    this.runAutoProcess();
+  }
+
+  async stopAutoMode() {
+    this.autoMode = false;
+    if (this.autoTimeout) {
+      clearTimeout(this.autoTimeout);
+      this.autoTimeout = null;
+    }
+    // Stop any active simulation monitoring
+    this.stopSimulationMonitoring();
+    await DebugLogger.info("Auto mode stopped");
+    this.updateAutoButton();
+  }
+
+  stopSimulationMonitoring() {
+    if (this.simulationAnimationId) {
+      cancelAnimationFrame(this.simulationAnimationId);
+      this.simulationAnimationId = null;
+    }
+    this.simulationMonitoringActive = false;
+    DebugLogger.info("Simulation monitoring stopped");
+  }
+
+  async runAutoProcess() {
+    if (!this.autoMode) return;
+    try {
+      // First try to auto select answer
+      const answerSelected = await this.autoSelectAnswer();
+
+      if (answerSelected) {
+        await DebugLogger.info("Answer auto-selected, waiting before clicking Next");
+      } else {
+        // No answer to select, just wait and continue
+        await DebugLogger.info("No saved answer found, waiting before continuing");
+
+        this.autoTimeout = setTimeout(() => {
+          if (this.autoMode) {
+            this.runAutoProcess();
+          }
+        }, this.autoDelay);
+      }
+    } catch (error) {
+      await DebugLogger.error("Error in auto process: " + error.message);
+      // Continue auto mode even if there's an error
+      this.autoTimeout = setTimeout(() => {
+        if (this.autoMode) {
+          this.runAutoProcess();
+        }
+      }, this.autoDelay);
+    }
+  }
+
+  next() {
+    // Wait for configured delay then click Next
+    this.autoTimeout = setTimeout(async () => {
+      if (this.autoMode) {
+        await this.autoClickNext();
+      }
+    }, this.autoDelay);
+  }
+
+  async autoSelectAnswer() {
+    try {
+      // Increment question count
+      this.questionCount++;
+
+      // Check if we have a saved answer for current question
+      const questionData = this.extractQuestionData(document.body);
+      if (!questionData) {
+        return false;
+      }
+
+      const response = await chrome.runtime.sendMessage({
+        action: "getAnswer",
+        questionTitle: questionData.title,
+        backupTitle: questionData.title.split("_")[1] || null,
+      });
+
+      if (response?.found && response.data?.correctAnswer) {
+        const correctAnswer = response.data.correctAnswer;
+
+        // Determine if we should select wrong answer based on configuration
+        const shouldSelectWrong = this.shouldSelectWrongAnswer();
+
+        if (shouldSelectWrong) {
+          this.wrongAnswersSelected++;
+          await DebugLogger.info(`Intentionally selecting wrong answer (${this.wrongAnswersSelected}/${this.wrongAnswerCount})`);
+          if (questionData.type === "simulation") {
+            return this.autoSelectRandomSimulationAnswer();
+          } else {
+            return this.autoSelectWrongMultipleChoiceAnswer(correctAnswer);
+          }
+        } else {
+          await DebugLogger.info("Found saved answer, auto-selecting correct answer");
+          if (questionData.type === "simulation") {
+            return this.autoSelectSimulationAnswer(correctAnswer);
+          } else {
+            return this.autoSelectMultipleChoiceAnswer(correctAnswer);
+          }
+        }
+      } else {
+        // No saved answer found - count as wrong answer
+        this.wrongAnswersSelected++;
+        await DebugLogger.info(`No saved answer found, selecting randomly (counts as wrong: ${this.wrongAnswersSelected}/${this.wrongAnswerCount})`);
+
+        if (questionData.type === "simulation") {
+          return this.autoSelectRandomSimulationAnswer();
+        } else {
+          return this.autoSelectRandomMultipleChoiceAnswer();
+        }
+      }
+    } catch (error) {
+      await DebugLogger.error("Error in auto select answer: " + error.message);
+      return false;
+    }
+  }
+
+  // Determine if we should select wrong answer based on configuration
+  shouldSelectWrongAnswer() {
+    if (this.wrongAnswerCount === 0) return false;
+
+    // Select wrong answer if we haven't reached the target count yet
+    return this.wrongAnswersSelected < this.wrongAnswerCount;
+  }
+
+  autoSelectMultipleChoiceAnswer(correctAnswerText) {
+    DebugLogger.info("Auto-selecting multiple choice answer: " + correctAnswerText);
+    const radioInputs = document.querySelectorAll('input[type="radio"]');
+
+    for (const radio of radioInputs) {
+      const labelText = this.findAnswerLabel(radio);
+      if (labelText && this.isAnswerMatch(labelText, correctAnswerText)) {
+        // Select the radio button
+        radio.click();
+        this.next();
+        DebugLogger.info("Auto-selected answer: " + labelText);
+        return true;
+      }
+    }
+    this.next();
+    return false;
+  }
+
+  autoSelectSimulationAnswer(correctAnswer) {
+    try {
+      // For simulation questions, we need to monitor video time and trigger space when in optimal range
+      if (!correctAnswer || typeof correctAnswer !== "object") {
+        DebugLogger.error("Invalid correct answer data for simulation");
+        return false;
+      }
+
+      const startPos = correctAnswer.startPosition;
+      const endPos = correctAnswer.endPosition;
+
+      // Start monitoring video time
+      this.startSimulationMonitoring(startPos, endPos);
+
+      DebugLogger.info("Started monitoring simulation for optimal range", { startPos, endPos });
+      return true;
+    } catch (error) {
+      DebugLogger.error("Error auto-selecting simulation answer: " + error.message);
+      return false;
+    }
+  }
+
+  startSimulationMonitoring(startPos, endPos) {
+    // Stop any existing monitoring first
+    this.stopSimulationMonitoring();
+
+    // Get video element
+    const video = document.querySelector('video');
+    if (!video) return;
+
+    // Get total duration from UI
+    const totalDuration = this.getVideoDuration();
+    if (!totalDuration) return;
+
+    // Calculate target time range in seconds
+    const startTime = (startPos / 100) * totalDuration + Math.random() * 2; // Add small random offset
+    const endTime = (endPos / 100) * totalDuration - Math.random() * 2; // Subtract small random offset
+
+    DebugLogger.info("Simulation monitoring setup", {
+      totalDuration,
+      startTime: startTime.toFixed(2),
+      endTime: endTime.toFixed(2)
+    });
+
+    // Set monitoring as active
+    this.simulationMonitoringActive = true;
+
+    // Monitor video time
+    const checkTime = () => {
+      // Stop if auto mode is disabled or monitoring is stopped
+      if (!this.autoMode || !this.simulationMonitoringActive) {
+        this.simulationAnimationId = null;
+        return;
+      }
+
+      const currentTime = video.currentTime;
+
+      // Check if current time is in optimal range
+      if (currentTime >= startTime && currentTime <= endTime) {
+        DebugLogger.info("Optimal time reached, triggering space", {
+          currentTime: currentTime.toFixed(2),
+          targetRange: `${startTime.toFixed(2)}s - ${endTime.toFixed(2)}s`
+        });
+
+        this.triggerSimulationAction();
+        this.stopSimulationMonitoring(); // Stop monitoring after triggering
+        return;
+      }
+
+      // Continue monitoring if video is still playing and we haven't reached the range yet
+      if (!video.paused && currentTime < endTime) {
+        this.simulationAnimationId = requestAnimationFrame(checkTime);
+      } else {
+        // Video paused or past end time, stop monitoring
+        this.stopSimulationMonitoring();
+      }
+    };
+
+    // Start monitoring
+    this.simulationAnimationId = requestAnimationFrame(checkTime);
+  }
+
+  triggerSimulationAction() {
+    try {
+      // Method 2: Trigger space key event
+      const spaceEvent = new KeyboardEvent('keydown', {
+        key: ' ',
+        code: 'Space',
+        keyCode: 32,
+        which: 32,
+        bubbles: true,
+        cancelable: true
+      });
+
+      document.dispatchEvent(spaceEvent);
+
+      // Also try keyup event
+      const spaceUpEvent = new KeyboardEvent('keyup', {
+        key: ' ',
+        code: 'Space',
+        keyCode: 32,
+        which: 32,
+        bubbles: true,
+        cancelable: true
+      });
+
+      document.dispatchEvent(spaceUpEvent);
+
+      DebugLogger.info("Triggered space key events");
+      this.next();
+    } catch (error) {
+      DebugLogger.error("Error triggering simulation action: " + error.message);
+      this.next();
+    }
+  }
+
+  // New method to intentionally select wrong answer
+  autoSelectWrongMultipleChoiceAnswer(correctAnswerText) {
+    DebugLogger.info("Intentionally selecting wrong answer, correct is: " + correctAnswerText);
+    const radioInputs = document.querySelectorAll('input[type="radio"]');
+    const wrongOptions = [];
+
+    // Find all wrong answers (not matching correct answer)
+    for (const radio of radioInputs) {
+      const labelText = this.findAnswerLabel(radio);
+      if (labelText && !this.isAnswerMatch(labelText, correctAnswerText)) {
+        wrongOptions.push({ radio, label: labelText });
+      }
+    }
+
+    if (wrongOptions.length > 0) {
+      // Select random wrong answer
+      const randomWrong = wrongOptions[Math.floor(Math.random() * wrongOptions.length)];
+      randomWrong.radio.click();
+      this.next();
+      DebugLogger.info("Auto-selected wrong answer: " + randomWrong.label);
+      return true;
+    } else {
+      // Fallback to correct answer if no wrong options found
+      return this.autoSelectMultipleChoiceAnswer(correctAnswerText);
+    }
+  }
+
+  // Random selection methods
+  autoSelectRandomMultipleChoiceAnswer() {
+    try {
+      const radioInputs = document.querySelectorAll('input[type="radio"]');
+      if (radioInputs.length === 0) {
+        return false;
+      }
+
+      // Select a random radio button
+      const randomIndex = Math.floor(Math.random() * radioInputs.length);
+      const randomRadio = radioInputs[randomIndex];
+      const labelText = this.findAnswerLabel(randomRadio);
+
+      randomRadio.click();
+      this.next();
+      DebugLogger.info("Auto-selected random answer: " + (labelText || "Unknown"));
+      return true;
+    } catch (error) {
+      DebugLogger.error("Error auto-selecting random multiple choice answer: " + error.message);
+      this.next();
+      return false;
+    }
+  }
+
+  autoSelectRandomSimulationAnswer() {
+    DebugLogger.info("Auto-selecting random simulation answer");
+    try {
+      // Generate random start and end positions (10% to 90% range)
+      const startPos = Math.random() * 30 + 10; // 10-40%
+      const endPos = startPos + Math.random() * 40 + 10; // startPos + 10-50%
+      const finalEndPos = Math.min(endPos, 90); // Cap at 90%
+
+      // Start monitoring for random range
+      this.startSimulationMonitoring(startPos, finalEndPos);
+      return true;
+    } catch (error) {
+      DebugLogger.error("Error auto-selecting random simulation answer: " + error.message);
+      return false;
+    }
+  }
+
+  async autoClickNext() {
+    try {
+      const nextBtn = document.querySelector("#practice-question-footer-pc .btn-primary");
+      if (!nextBtn) {
+        // No Next button found - quiz completed
+        await DebugLogger.info("No Next button found - quiz completed, stopping auto mode");
+        await this.stopAutoMode();
+        return;
+      }
+
+      // Trigger save before clicking
+      await this.saveCurrentAnswer(document.body);
+
+      // Click the Next button
+      nextBtn.click();
+      await DebugLogger.info("Auto-clicked Next button");
+
+      // Wait a moment then continue auto process for next question
+      setTimeout(() => {
+        if (this.autoMode) {
+          this.runAutoProcess();
+        }
+      }, 1000); // Short delay to wait for page transition
+    } catch (error) {
+      await DebugLogger.error("Error auto-clicking Next: " + error.message);
+      // Continue auto mode
+      this.autoTimeout = setTimeout(() => {
+        if (this.autoMode) {
+          this.runAutoProcess();
+        }
+      }, this.autoDelay);
     }
   }
 
@@ -250,22 +839,22 @@ class QuizHelper {
       // Extract positions and widths from style attribute
       const positions = [];
       let totalWidth = 0;
-      
+
       marks.forEach((mark) => {
         const style = mark.getAttribute("style") || "";
         const leftMatch = style.match(/left:\s*([\d.]+)%/);
         const paddingRightMatch = style.match(/padding-right:\s*([\d.]+)%/);
-        
+
         if (leftMatch) {
           const leftPos = parseFloat(leftMatch[1]);
           const paddingRight = paddingRightMatch ? parseFloat(paddingRightMatch[1]) : 0;
-          
+
           positions.push({
             left: leftPos,
             paddingRight: paddingRight,
             right: leftPos + paddingRight
           });
-          
+
           totalWidth += paddingRight;
         }
       });
@@ -638,7 +1227,7 @@ class QuizHelper {
       // Add debug info
       console.log('Highlight tracking bar:', {
         startPos: startPos + '%',
-        endPos: endPos + '%', 
+        endPos: endPos + '%',
         width: width + '%',
         calculatedWidth: width
       });
@@ -717,9 +1306,13 @@ class QuizHelper {
   removeAllButtons() {
     // Clear tracking sets
     this.highlightedQuestion = null;
+
+    // Stop auto mode
+    this.stopAutoMode();
+
     document
       .querySelectorAll(
-        ".quiz-helper-save-btn, .quiz-helper-notice, .quiz-helper-icon, .quiz-helper-simulation-notice, .quiz-helper-tracking-highlight"
+        ".quiz-helper-save-btn, .quiz-helper-notice, .quiz-helper-icon, .quiz-helper-simulation-notice, .quiz-helper-tracking-highlight, .quiz-helper-auto-container"
       )
       .forEach((el) => el.remove());
 
