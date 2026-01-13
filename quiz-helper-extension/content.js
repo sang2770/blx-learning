@@ -46,7 +46,6 @@ class QuizHelper {
     this.wrongAnswersSelected = 0; // Track how many wrong answers selected
     this.questionCount = 0; // Track question count for wrong answer logic
     this.simulationMonitoringActive = false; // Track if simulation monitoring is active
-    this.simulationAnimationId = null; // Store animation frame ID for cleanup
     this.init();
   }
 
@@ -382,10 +381,6 @@ class QuizHelper {
   }
 
   stopSimulationMonitoring() {
-    if (this.simulationAnimationId) {
-      cancelAnimationFrame(this.simulationAnimationId);
-      this.simulationAnimationId = null;
-    }
     this.simulationMonitoringActive = false;
     DebugLogger.info("Simulation monitoring stopped");
   }
@@ -528,6 +523,7 @@ class QuizHelper {
       return true;
     } catch (error) {
       DebugLogger.error("Error auto-selecting simulation answer: " + error.message);
+      this.next();
       return false;
     }
   }
@@ -542,26 +538,32 @@ class QuizHelper {
 
     // Get total duration from UI
     const totalDuration = this.getVideoDuration();
-    if (!totalDuration) return;
+    if (!totalDuration) {
+      DebugLogger.error("Cannot determine video duration for simulation monitoring");
+      this.next();
+      return;
+    };
+
 
     // Calculate target time range in seconds
-    const startTime = (startPos / 100) * totalDuration + Math.random() * 2; // Add small random offset
-    const endTime = (endPos / 100) * totalDuration - Math.random() * 2; // Subtract small random offset
+    const startTime = Math.max(0, (startPos / 100) * totalDuration + Math.random() * 1);
+    const endTime = Math.min(totalDuration, (endPos / 100) * totalDuration - Math.random() * 1);
+    const maxMonitoringTime = totalDuration * 1000 + 5000; // Total duration + 5 seconds buffer
+
 
     DebugLogger.info("Simulation monitoring setup", {
       totalDuration,
       startTime: startTime.toFixed(2),
-      endTime: endTime.toFixed(2)
+      endTime: endTime.toFixed(2),
+      maxMonitoringTime: maxMonitoringTime
     });
 
     // Set monitoring as active
     this.simulationMonitoringActive = true;
-
     // Monitor video time
     const checkTime = () => {
       // Stop if auto mode is disabled or monitoring is stopped
       if (!this.autoMode || !this.simulationMonitoringActive) {
-        this.simulationAnimationId = null;
         return;
       }
 
@@ -580,8 +582,8 @@ class QuizHelper {
       }
 
       // Continue monitoring if video is still playing and we haven't reached the range yet
-      if (!video.paused && currentTime < endTime) {
-        this.simulationAnimationId = requestAnimationFrame(checkTime);
+      if (currentTime < endTime && !video.ended) {
+        video.requestVideoFrameCallback(checkTime);
       } else {
         // Video paused or past end time, stop monitoring
         this.stopSimulationMonitoring();
@@ -589,7 +591,7 @@ class QuizHelper {
     };
 
     // Start monitoring
-    this.simulationAnimationId = requestAnimationFrame(checkTime);
+    video.requestVideoFrameCallback(checkTime);
   }
 
   triggerSimulationAction() {
