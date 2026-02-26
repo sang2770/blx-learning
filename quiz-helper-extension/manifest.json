@@ -18,6 +18,12 @@
       "js": ["content.js"],
       "css": ["content.css"],
       "run_at": "document_end"
+    },
+    {
+      "matches": ["https://daotaosathachlaixeaulac.huelms.com/*"],
+      "js": ["content-script.js"],
+      "run_at": "document_start",
+      "all_frames": true
     }
   ],
 
@@ -28,7 +34,7 @@
 
   "web_accessible_resources": [
     {
-      "resources": ["debug-window.html", "debug-window.js"],
+      "resources": ["debug-window.html", "debug-window.js", "unfocus.js"],
       "matches": ["<all_urls>"]
     }
   ]
