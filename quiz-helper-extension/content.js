@@ -427,6 +427,8 @@ class QuizHelper {
         }, 2000);
         return true;
       }
+    } else {
+      alert("Không tìm thấy nút kết thúc luyện thi. Vui lòng kết thúc thủ công để tiếp tục repeat.");
     }
     return false;
   }
@@ -558,7 +560,7 @@ class QuizHelper {
           }
         }, this.autoDelay);
       }
-      // this.checkForRepeatCompletion();
+      this.checkForRepeatCompletion();
     } catch (error) {
       await DebugLogger.error("Error in auto process: " + error.message);
       // Continue auto mode even if there's an error
