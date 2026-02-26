@@ -38,6 +38,7 @@ class QuizHelper {
     this.observerActive = false;
     this.addSaveButtonInterval = null;
     this.questionProcessedSet = new Set();
+    this.questionProcessDomSet = new Set();
     this.highlightedQuestion = null;
     this.autoMode = false;
     this.autoDelay = 2000; // Default 2 seconds
@@ -46,21 +47,17 @@ class QuizHelper {
     this.wrongAnswersSelected = 0; // Track how many wrong answers selected
     this.questionCount = 0; // Track question count for wrong answer logic
     this.simulationMonitoringActive = false; // Track if simulation monitoring is active
+    this.repeatMode = false; // Flag for auto repeat mode
+    this.repeatTimeout = null; // Timeout ID for repeat process
     this.init();
   }
 
   async init() {
-    await DebugLogger.info("QuizHelper initializing...", {
-      url: window.location.href,
-    });
-
     // Check if extension is enabled
     const result = await chrome.storage.sync.get(["extensionEnabled", "autoDelay", "wrongAnswerCount"]);
     this.isEnabled = result.extensionEnabled !== false;
     this.autoDelay = result.autoDelay || 2000;
     this.wrongAnswerCount = result.wrongAnswerCount || 0;
-
-    await DebugLogger.info(`Extension enabled status: ${this.isEnabled}`);
 
     if (this.isEnabled) {
       this.startObserver();
@@ -78,9 +75,6 @@ class QuizHelper {
     chrome.storage.onChanged.addListener((changes) => {
       if (changes.extensionEnabled) {
         this.isEnabled = changes.extensionEnabled.newValue;
-        DebugLogger.info(
-          `Extension toggled: ${this.isEnabled ? "enabled" : "disabled"}`
-        );
         if (this.isEnabled) {
           this.startObserver();
           this.processExistingQuestions();
@@ -93,13 +87,18 @@ class QuizHelper {
       }
       if (changes.autoDelay) {
         this.autoDelay = changes.autoDelay.newValue;
-        DebugLogger.info(`Auto delay updated to: ${this.autoDelay}ms`);
         this.updateAutoButtonDelay();
       }
       if (changes.wrongAnswerCount) {
         this.wrongAnswerCount = changes.wrongAnswerCount.newValue;
-        DebugLogger.info(`Wrong answer count updated to: ${this.wrongAnswerCount}`);
         this.updateWrongAnswerButton();
+      }
+      if (changes.repeatMode) {
+        this.repeatMode = changes.repeatMode.newValue;
+        this.updateRepeatButton();
+        if (!this.repeatMode) {
+          this.stopRepeatMode();
+        }
       }
     });
   }
@@ -171,8 +170,10 @@ class QuizHelper {
     // Remove existing auto button to avoid duplicates
     const existingButton = document.querySelector(".quiz-helper-auto-btn");
     const existingConfig = document.querySelector(".quiz-helper-config-btn");
+    const existingContainer = document.querySelector(".quiz-helper-auto-container");
     if (existingButton) existingButton.remove();
     if (existingConfig) existingConfig.remove();
+    if (existingContainer) existingContainer.remove();
 
     // Create auto button container
     const buttonContainer = document.createElement("div");
@@ -257,6 +258,33 @@ class QuizHelper {
       this.showWrongAnswerConfig();
     });
 
+    // Repeat button
+    const repeatButton = document.createElement("button");
+    repeatButton.className = "quiz-helper-repeat-btn";
+    repeatButton.textContent = this.repeatMode ? "⏸️ Tạm dừng Repeat" : "🔄 Auto Repeat";
+    repeatButton.style.cssText = `
+      padding: 12px 16px;
+      background: ${this.repeatMode ? '#ff9800' : '#28a745'};
+      color: ${this.repeatMode ? 'black' : 'white'};
+      border: none;
+      border-radius: 6px;
+      cursor: pointer;
+      font-size: 14px;
+      font-weight: bold;
+      box-shadow: 0 4px 12px rgba(0,0,0,0.2);
+      transition: all 0.3s ease;
+      min-width: 140px;
+      text-align: center;
+    `;
+
+    repeatButton.addEventListener("click", () => {
+      if (this.repeatMode) {
+        this.stopRepeatMode();
+      } else {
+        this.startRepeatMode();
+      }
+    });
+
     // Add hover effects
     autoButton.addEventListener("mouseenter", () => {
       autoButton.style.transform = "translateY(-2px)";
@@ -281,9 +309,19 @@ class QuizHelper {
       wrongAnswerButton.style.transform = "translateY(0)";
     });
 
+    repeatButton.addEventListener("mouseenter", () => {
+      repeatButton.style.transform = "translateY(-2px)";
+      repeatButton.style.boxShadow = "0 6px 16px rgba(0,0,0,0.3)";
+    });
+    repeatButton.addEventListener("mouseleave", () => {
+      repeatButton.style.transform = "translateY(0)";
+      repeatButton.style.boxShadow = "0 4px 12px rgba(0,0,0,0.2)";
+    });
+
     buttonContainer.appendChild(autoButton);
     buttonContainer.appendChild(configButton);
     buttonContainer.appendChild(wrongAnswerButton);
+    buttonContainer.appendChild(repeatButton);
     document.body.appendChild(buttonContainer);
   }
 
@@ -293,7 +331,6 @@ class QuizHelper {
       this.autoDelay = parseFloat(newDelay) * 1000;
       chrome.storage.sync.set({ autoDelay: this.autoDelay });
       this.updateAutoButtonDelay();
-      DebugLogger.info(`Auto delay configured to: ${this.autoDelay}ms`);
     }
   }
 
@@ -303,7 +340,6 @@ class QuizHelper {
       this.wrongAnswerCount = parseInt(newCount);
       chrome.storage.sync.set({ wrongAnswerCount: this.wrongAnswerCount });
       this.updateWrongAnswerButton();
-      DebugLogger.info(`Wrong answer count configured to: ${this.wrongAnswerCount}`);
     }
   }
 
@@ -339,7 +375,7 @@ class QuizHelper {
   handleMessage(request, sender, sendResponse) {
     switch (request.action) {
       case 'getAutoModeStatus':
-        sendResponse({ autoMode: this.autoMode });
+        sendResponse({ autoMode: this.autoMode, repeatMode: this.repeatMode });
         break;
       case 'startAutoMode':
         this.startAutoMode();
@@ -347,6 +383,14 @@ class QuizHelper {
         break;
       case 'stopAutoMode':
         this.stopAutoMode();
+        sendResponse({ success: true });
+        break;
+      case 'startRepeatMode':
+        this.startRepeatMode();
+        sendResponse({ success: true });
+        break;
+      case 'stopRepeatMode':
+        this.stopRepeatMode();
         sendResponse({ success: true });
         break;
       case 'updateAutoDelay':
@@ -362,10 +406,43 @@ class QuizHelper {
     this.autoMode = true;
     this.questionCount = 0; // Reset question count when starting auto mode
     this.wrongAnswersSelected = 0; // Reset wrong answers counter
-    await DebugLogger.info("Auto mode started");
-    this.updateAutoButton();
+    if (!this.repeatMode) {
+      this.updateAutoButton();
+    }
     // Start auto process
     this.runAutoProcess();
+  }
+
+  finishExam() {
+    // <div class="ant-spin-container">Kết thúc luyện thi</div>
+    const finishBtn = document.querySelectorAll(".ant-spin-container");
+    if (finishBtn.length > 0) {
+      const btn = [...finishBtn].find(el => el.textContent.includes("Kết thúc luyện thi"));
+      if (btn) {
+        btn.click();
+        setTimeout(() => {
+          if (this.repeatMode) {
+            this.scheduleNextRepeat();
+          }
+        }, 2000);
+        return true;
+      }
+    }
+    return false;
+  }
+
+  startExam() {
+    // <button class="btn-primary btn btn-outline btn-small">Luyện tất cả (25)</button>
+    const startBtn = document.querySelectorAll(".btn-primary.btn.btn-outline.btn-small");
+    if (startBtn.length > 0) {
+      const btn = [...startBtn].find(el => el.textContent.includes("Luyện tất cả"));
+      if (btn) {
+        btn.click();
+        DebugLogger.info("Clicked start exam button" + (this.repeatMode ? " (repeat mode)" : ""));
+        return true;
+      }
+    }
+    return false;
   }
 
   async stopAutoMode() {
@@ -380,14 +457,93 @@ class QuizHelper {
     this.updateAutoButton();
   }
 
+  // Repeat mode methods
+  async startRepeatMode() {
+    this.repeatMode = true;
+    this.updateRepeatButton();
+    // Start repeat process
+    this.runRepeatProcess();
+  }
+
+  async stopRepeatMode() {
+    this.repeatMode = false;
+    if (this.repeatTimeout) {
+      clearTimeout(this.repeatTimeout);
+      this.repeatTimeout = null;
+    }
+    // Also stop auto mode if running
+    if (this.autoMode) {
+      await this.stopAutoMode();
+    }
+    this.updateRepeatButton();
+  }
+
+  async runRepeatProcess() {
+    if (!this.repeatMode) return;
+
+    try {
+      this.startExam();
+      // Start auto mode if not already running
+      if (!this.autoMode) {
+        await this.startAutoMode();
+      }
+    } catch (error) {
+      // Continue repeat mode even if there's an error
+      this.scheduleNextRepeat();
+    }
+  }
+
+  checkForRepeatCompletion() {
+    if (!this.repeatMode) return;
+    // Check if there's no next button (quiz completed)
+    const nextBtn = document.querySelector("#practice-question-footer-pc .btn-primary");
+
+    if (!nextBtn) {
+      this.finishExam();
+    }
+  }
+
+  scheduleNextRepeat() {
+    if (!this.repeatMode) return;
+
+    this.repeatTimeout = setTimeout(() => {
+      if (this.repeatMode) {
+        // Start new exam
+        this.startExam();
+        // Wait a bit then start auto process again
+        setTimeout(() => {
+          if (this.repeatMode) {
+            this.runRepeatProcess();
+          }
+        }, 2000);
+      }
+    }, 5000);
+  }
+
+  updateRepeatButton() {
+    const repeatBtn = document.querySelector(".quiz-helper-repeat-btn");
+    if (repeatBtn) {
+      if (this.repeatMode) {
+        repeatBtn.textContent = "⏸️ Tạm dừng Repeat";
+        repeatBtn.style.background = "#ff9800";
+        repeatBtn.style.color = "black";
+      } else {
+        repeatBtn.textContent = "🔄 Auto Repeat";
+        repeatBtn.style.background = "#28a745";
+        repeatBtn.style.color = "white";
+      }
+    }
+  }
+
   stopSimulationMonitoring() {
     this.simulationMonitoringActive = false;
-    DebugLogger.info("Simulation monitoring stopped");
   }
 
   async runAutoProcess() {
     if (!this.autoMode) return;
     try {
+      // delay 2s
+      // await new Promise(resolve => setTimeout(resolve, this.autoDelay));
       // First try to auto select answer
       const answerSelected = await this.autoSelectAnswer();
 
@@ -396,13 +552,13 @@ class QuizHelper {
       } else {
         // No answer to select, just wait and continue
         await DebugLogger.info("No saved answer found, waiting before continuing");
-
         this.autoTimeout = setTimeout(() => {
           if (this.autoMode) {
             this.runAutoProcess();
           }
         }, this.autoDelay);
       }
+      // this.checkForRepeatCompletion();
     } catch (error) {
       await DebugLogger.error("Error in auto process: " + error.message);
       // Continue auto mode even if there's an error
@@ -440,6 +596,7 @@ class QuizHelper {
         backupTitle: questionData.title.split("_")[1] || null,
       });
 
+
       if (response?.found && response.data?.correctAnswer) {
         const correctAnswer = response.data.correctAnswer;
 
@@ -448,14 +605,12 @@ class QuizHelper {
 
         if (shouldSelectWrong) {
           this.wrongAnswersSelected++;
-          await DebugLogger.info(`Intentionally selecting wrong answer (${this.wrongAnswersSelected}/${this.wrongAnswerCount})`);
           if (questionData.type === "simulation") {
             return this.autoSelectRandomSimulationAnswer();
           } else {
             return this.autoSelectWrongMultipleChoiceAnswer(correctAnswer);
           }
         } else {
-          await DebugLogger.info("Found saved answer, auto-selecting correct answer");
           if (questionData.type === "simulation") {
             return this.autoSelectSimulationAnswer(correctAnswer);
           } else {
@@ -465,7 +620,6 @@ class QuizHelper {
       } else {
         // No saved answer found - count as wrong answer
         this.wrongAnswersSelected++;
-        await DebugLogger.info(`No saved answer found, selecting randomly (counts as wrong: ${this.wrongAnswersSelected}/${this.wrongAnswerCount})`);
 
         if (questionData.type === "simulation") {
           return this.autoSelectRandomSimulationAnswer();
@@ -488,7 +642,6 @@ class QuizHelper {
   }
 
   autoSelectMultipleChoiceAnswer(correctAnswerText) {
-    DebugLogger.info("Auto-selecting multiple choice answer: " + correctAnswerText);
     const radioInputs = document.querySelectorAll('input[type="radio"]');
 
     for (const radio of radioInputs) {
@@ -497,7 +650,6 @@ class QuizHelper {
         // Select the radio button
         radio.click();
         this.next();
-        DebugLogger.info("Auto-selected answer: " + labelText);
         return true;
       }
     }
@@ -519,7 +671,6 @@ class QuizHelper {
       // Start monitoring video time
       this.startSimulationMonitoring(startPos, endPos);
 
-      DebugLogger.info("Started monitoring simulation for optimal range", { startPos, endPos });
       return true;
     } catch (error) {
       DebugLogger.error("Error auto-selecting simulation answer: " + error.message);
@@ -539,7 +690,6 @@ class QuizHelper {
     // Get total duration from UI
     const totalDuration = this.getVideoDuration();
     if (!totalDuration) {
-      DebugLogger.error("Cannot determine video duration for simulation monitoring");
       this.next();
       return;
     };
@@ -548,15 +698,6 @@ class QuizHelper {
     // Calculate target time range in seconds
     const startTime = Math.max(0, (startPos / 100) * totalDuration + Math.random() * 1);
     const endTime = Math.min(totalDuration, (endPos / 100) * totalDuration - Math.random() * 1);
-    const maxMonitoringTime = totalDuration * 1000 + 5000; // Total duration + 5 seconds buffer
-
-
-    DebugLogger.info("Simulation monitoring setup", {
-      totalDuration,
-      startTime: startTime.toFixed(2),
-      endTime: endTime.toFixed(2),
-      maxMonitoringTime: maxMonitoringTime
-    });
 
     // Set monitoring as active
     this.simulationMonitoringActive = true;
@@ -620,7 +761,6 @@ class QuizHelper {
 
       document.dispatchEvent(spaceUpEvent);
 
-      DebugLogger.info("Triggered space key events");
       this.next();
     } catch (error) {
       DebugLogger.error("Error triggering simulation action: " + error.message);
@@ -630,7 +770,6 @@ class QuizHelper {
 
   // New method to intentionally select wrong answer
   autoSelectWrongMultipleChoiceAnswer(correctAnswerText) {
-    DebugLogger.info("Intentionally selecting wrong answer, correct is: " + correctAnswerText);
     const radioInputs = document.querySelectorAll('input[type="radio"]');
     const wrongOptions = [];
 
@@ -647,7 +786,6 @@ class QuizHelper {
       const randomWrong = wrongOptions[Math.floor(Math.random() * wrongOptions.length)];
       randomWrong.radio.click();
       this.next();
-      DebugLogger.info("Auto-selected wrong answer: " + randomWrong.label);
       return true;
     } else {
       // Fallback to correct answer if no wrong options found
@@ -660,6 +798,7 @@ class QuizHelper {
     try {
       const radioInputs = document.querySelectorAll('input[type="radio"]');
       if (radioInputs.length === 0) {
+        DebugLogger.info("No radio inputs found for random selection");
         return false;
       }
 
@@ -680,7 +819,6 @@ class QuizHelper {
   }
 
   autoSelectRandomSimulationAnswer() {
-    DebugLogger.info("Auto-selecting random simulation answer");
     try {
       // Generate random start and end positions (10% to 90% range)
       const startPos = Math.random() * 30 + 10; // 10-40%
@@ -701,17 +839,15 @@ class QuizHelper {
       const nextBtn = document.querySelector("#practice-question-footer-pc .btn-primary");
       if (!nextBtn) {
         // No Next button found - quiz completed
-        await DebugLogger.info("No Next button found - quiz completed, stopping auto mode");
         await this.stopAutoMode();
         return;
       }
 
-      // Trigger save before clicking
-      await this.saveCurrentAnswer(document.body);
+      // // Trigger save before clicking
+      // await this.saveCurrentAnswer(document.body);
 
       // Click the Next button
       nextBtn.click();
-      await DebugLogger.info("Auto-clicked Next button");
 
       // Wait a moment then continue auto process for next question
       setTimeout(() => {
@@ -736,7 +872,6 @@ class QuizHelper {
       if (!questionId) {
         return;
       }
-      await DebugLogger.info(`Processing question: ${questionId}`);
       // Always add save button
       this.addSaveButtonInterval && clearInterval(this.addSaveButtonInterval);
       this.addSaveButtonInterval = setInterval(() => {
@@ -937,18 +1072,11 @@ class QuizHelper {
     try {
       // Extract question data when button is clicked
       const questionData = this.extractQuestionData(questionPanel);
-      // DebugLogger.info("Extracted question data for saving", { questionData });
       if (!questionData) {
-        DebugLogger.warning(
-          "Cannot extract question data on save button click"
-        );
         throw new Error("Không thể lấy thông tin câu hỏi");
       }
 
       if (this.questionProcessedSet.has(questionData.title)) {
-        await DebugLogger.info("Question already processed, skipping save", {
-          questionTitle: questionData.title,
-        });
         return;
       }
       this.questionProcessedSet.add(questionData.title);
@@ -956,9 +1084,6 @@ class QuizHelper {
       // Extract correct answer
       const correctAnswer = this.extractCorrectAnswer();
       if (!correctAnswer) {
-        DebugLogger.warning("Cannot find correct answer to save", {
-          questionTitle: questionData.title,
-        });
         return;
       }
 
@@ -969,12 +1094,6 @@ class QuizHelper {
         correctAnswer: correctAnswer,
       };
 
-      await DebugLogger.info("Saving answer for question", {
-        questionTitle: questionData.title,
-        type: questionData.type,
-        correctAnswer,
-      });
-
       // Save to storage via background script
       const response = await chrome.runtime.sendMessage({
         action: "saveAnswer",
@@ -982,7 +1101,7 @@ class QuizHelper {
       });
 
       if (response?.success) {
-        await DebugLogger.info("Answer saved successfully", {
+        DebugLogger.info("Answer saved successfully", {
           questionTitle: questionData.title,
         });
       } else {
@@ -1004,9 +1123,6 @@ class QuizHelper {
     const correctAnswerBox = document.querySelector(".correct-answer-box");
     if (correctAnswerBox) {
       const text = correctAnswerBox.textContent;
-      DebugLogger.info(
-        "Extracted correct answer from correct-answer-box" + text
-      );
       // Extract answer after "Câu trả lời chính xác là:"
       const match = text.match(/Câu trả lời chính xác là:\s*(.+)/);
       if (match) {
@@ -1078,11 +1194,6 @@ class QuizHelper {
         action: "getAnswer",
         questionTitle: questionData.title,
         backupTitle: questionData.title.split("_")[1] || null,
-      });
-
-      DebugLogger.info("Checked for saved answer", {
-        questionTitle: questionData.title,
-        response,
       });
 
       if (response?.found && response.data?.correctAnswer) {
@@ -1309,8 +1420,9 @@ class QuizHelper {
     // Clear tracking sets
     this.highlightedQuestion = null;
 
-    // Stop auto mode
+    // Stop auto mode and repeat mode
     this.stopAutoMode();
+    this.stopRepeatMode();
 
     document
       .querySelectorAll(

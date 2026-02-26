@@ -26,16 +26,16 @@
 
     // Override `requestAnimationFrame` to ensure consistent activity
     window.requestAnimationFrame = (callback) => originalRAF(() => {
-        try { callback(originalPerformanceNow()); } catch (e) {}
+        try { callback(originalPerformanceNow()); } catch (e) { }
     });
 
     // Adjust timers to simulate activity
     window.setTimeout = (callback, delay) => originalSetTimeout(() => {
-        try { callback(); } catch (e) {}
+        try { callback(); } catch (e) { }
     }, Math.max(0, delay));
 
     window.setInterval = (callback, delay) => originalSetInterval(() => {
-        try { callback(); } catch (e) {}
+        try { callback(); } catch (e) { }
     }, Math.max(0, delay));
 
     // Offset performance.now and Date.now for consistency
@@ -83,5 +83,5 @@
         if (target === document || target === document.documentElement) return;
         return originalObserver.call(this, target, options);
     };
-    alert('Quiz Helper Extension: Unfocus mode enabled. The quiz will continue to function even when the tab is not active.');
+    // alert('Quiz Helper Extension: Unfocus mode enabled. The quiz will continue to function even when the tab is not active.');
 })();
