@@ -573,6 +573,7 @@ class QuizHelper {
   }
 
   next() {
+    DebugLogger.info("Proceeding to next question");
     // Wait for configured delay then click Next
     this.autoTimeout = setTimeout(async () => {
       if (this.autoMode) {
@@ -583,12 +584,14 @@ class QuizHelper {
 
   async autoSelectAnswer() {
     try {
+      DebugLogger.info("Attempting to auto-select answer for current question");
       // Increment question count
       this.questionCount++;
 
       // Check if we have a saved answer for current question
       const questionData = this.extractQuestionData(document.body);
       if (!questionData) {
+        DebugLogger.warning("Cannot extract question data for auto-selecting answer");
         return false;
       }
 
@@ -598,6 +601,10 @@ class QuizHelper {
         backupTitle: questionData.title.split("_")[1] || null,
       });
 
+      DebugLogger.info("Checked for saved answer", {
+        questionTitle: questionData.title,
+        response: response
+      });
 
       if (response?.found && response.data?.correctAnswer) {
         const correctAnswer = response.data.correctAnswer;
@@ -655,7 +662,7 @@ class QuizHelper {
         return true;
       }
     }
-    this.next();
+    this.autoSelectRandomMultipleChoiceAnswer(); // Fallback to random selection if correct answer not found
     return false;
   }
 
@@ -798,6 +805,7 @@ class QuizHelper {
   // Random selection methods
   autoSelectRandomMultipleChoiceAnswer() {
     try {
+      DebugLogger.info("No saved answer, selecting random answer for multiple choice question");
       const radioInputs = document.querySelectorAll('input[type="radio"]');
       if (radioInputs.length === 0) {
         DebugLogger.info("No radio inputs found for random selection");
