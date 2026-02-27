@@ -411,6 +411,7 @@ class QuizHelper {
     }
     // Start auto process
     this.runAutoProcess();
+    DebugLogger.info("Auto mode started");
   }
 
   finishExam() {
@@ -457,6 +458,7 @@ class QuizHelper {
     this.stopSimulationMonitoring();
     await DebugLogger.info("Auto mode stopped");
     this.updateAutoButton();
+    this.checkForRepeatCompletion();
   }
 
   // Repeat mode methods
@@ -512,6 +514,7 @@ class QuizHelper {
       if (this.repeatMode) {
         // Start new exam
         this.startExam();
+        this.startAutoMode();
         // Wait a bit then start auto process again
         setTimeout(() => {
           if (this.repeatMode) {
@@ -615,7 +618,7 @@ class QuizHelper {
         if (shouldSelectWrong) {
           this.wrongAnswersSelected++;
           if (questionData.type === "simulation") {
-            return this.autoSelectRandomSimulationAnswer();
+            return await this.autoSelectRandomSimulationAnswer();
           } else {
             return this.autoSelectWrongMultipleChoiceAnswer(correctAnswer);
           }
@@ -668,6 +671,7 @@ class QuizHelper {
 
   autoSelectSimulationAnswer(correctAnswer) {
     try {
+      DebugLogger.info("Auto-selecting simulation answer with data", correctAnswer);
       // For simulation questions, we need to monitor video time and trigger space when in optimal range
       if (!correctAnswer || typeof correctAnswer !== "object") {
         DebugLogger.error("Invalid correct answer data for simulation");
@@ -688,9 +692,11 @@ class QuizHelper {
     }
   }
 
-  startSimulationMonitoring(startPos, endPos) {
+  async startSimulationMonitoring(startPos, endPos) {
     // Stop any existing monitoring first
     this.stopSimulationMonitoring();
+    // Wait 5s before starting to allow video to load and play
+    await new Promise(resolve => setTimeout(resolve, 5000));
 
     // Get video element
     const video = document.querySelector('video');
@@ -828,7 +834,7 @@ class QuizHelper {
     }
   }
 
-  autoSelectRandomSimulationAnswer() {
+  async autoSelectRandomSimulationAnswer() {
     try {
       // Generate random start and end positions (10% to 90% range)
       const startPos = Math.random() * 30 + 10; // 10-40%
@@ -836,7 +842,7 @@ class QuizHelper {
       const finalEndPos = Math.min(endPos, 90); // Cap at 90%
 
       // Start monitoring for random range
-      this.startSimulationMonitoring(startPos, finalEndPos);
+      await this.startSimulationMonitoring(startPos, finalEndPos);
       return true;
     } catch (error) {
       DebugLogger.error("Error auto-selecting random simulation answer: " + error.message);
@@ -1204,6 +1210,10 @@ class QuizHelper {
         action: "getAnswer",
         questionTitle: questionData.title,
         backupTitle: questionData.title.split("_")[1] || null,
+      });
+      DebugLogger.info("Checking for saved answer to highlight", {
+        questionTitle: questionData.title,
+        response: response
       });
 
       if (response?.found && response.data?.correctAnswer) {
