@@ -144,9 +144,8 @@ class QuizHelper {
   }
 
   overrideNextButton() {
-    const nextBtn = document.querySelector(
-      "#practice-question-footer-pc .btn-primary"
-    );
+    const nextBtns = document.querySelectorAll(".ant-btn.ant-btn-primary");
+    const nextBtn = [...nextBtns].find(btn => btn.textContent.trim() === "Tiếp");
     if (nextBtn) {
       // Check if save button already exists
       if (nextBtn.classList.contains("quiz-helper-overridden")) {
@@ -181,7 +180,7 @@ class QuizHelper {
     buttonContainer.style.cssText = `
       position: fixed;
       bottom: 20px;
-      right: 20px;
+      left: 20px;
       z-index: 10000;
       display: flex;
       flex-direction: column;
@@ -500,7 +499,8 @@ class QuizHelper {
   checkForRepeatCompletion() {
     if (!this.repeatMode) return;
     // Check if there's no next button (quiz completed)
-    const nextBtn = document.querySelector("#practice-question-footer-pc .btn-primary");
+    const nextBtns = document.querySelectorAll(".ant-btn.ant-btn-primary");
+    const nextBtn = [...nextBtns].find(btn => btn.textContent.trim() === "Tiếp");
 
     if (!nextBtn) {
       this.finishExam();
@@ -563,6 +563,8 @@ class QuizHelper {
           }
         }, this.autoDelay);
       }
+      // wait 2s
+      await new Promise(resolve => setTimeout(resolve, this.autoDelay));
       this.checkForRepeatCompletion();
     } catch (error) {
       await DebugLogger.error("Error in auto process: " + error.message);
@@ -852,7 +854,8 @@ class QuizHelper {
 
   async autoClickNext() {
     try {
-      const nextBtn = document.querySelector("#practice-question-footer-pc .btn-primary");
+      const nextBtns = document.querySelectorAll(".ant-btn.ant-btn-primary");
+      const nextBtn = [...nextBtns].find(btn => btn.textContent.trim() === "Tiếp");
       if (!nextBtn) {
         // No Next button found - quiz completed
         await this.stopAutoMode();
