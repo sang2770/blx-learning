@@ -4,7 +4,7 @@
   "version": "1.0",
   "description": "Lưu và gợi ý đáp án cho các câu hỏi trắc nghiệm",
 
-  "permissions": ["storage", "activeTab", "windows"],
+  "permissions": ["storage", "activeTab", "tabs", "windows"],
 
   "host_permissions": ["https://daotaosathachlaixeaulac.huelms.com/*"],
 

@@ -1,129 +1,142 @@
 <!DOCTYPE html>
 <html>
-  <head>
-    <meta charset="utf-8" />
-    <link rel="stylesheet" href="content.css" />
-  </head>
 
-  <body>
-    <div class="quiz-helper-popup">
-      <div class="quiz-helper-header">
-        <h3>Quiz Helper - Trợ lý Đáp án</h3>
-      </div>
+<head>
+  <meta charset="utf-8" />
+  <link rel="stylesheet" href="content.css" />
+</head>
 
-      <div class="quiz-helper-content">
-        <!-- Extension Toggle -->
-        <div class="quiz-helper-toggle">
-          <span>Bật/Tắt gợi ý</span>
-          <div class="quiz-helper-switch" id="extensionToggle">
-            <div class="quiz-helper-switch-handle"></div>
-          </div>
-        </div>
-
-        <!-- Statistics -->
-        <div class="quiz-helper-stats">
-          <h4>Thống kê</h4>
-          <div class="quiz-helper-stat-item">
-            <span>Số câu hỏi đã lưu:</span>
-            <strong id="savedCount">0</strong>
-          </div>
-          <div class="quiz-helper-stat-item">
-            <span>Dung lượng sử dụng:</span>
-            <strong id="storageUsed">0 KB</strong>
-          </div>
-        </div>
-
-        <!-- Data Management -->
-        <div class="quiz-helper-section">
-          <h4>Quản lý dữ liệu</h4>
-
-          <button class="quiz-helper-button" id="exportBtn">
-            📤 Xuất dữ liệu
-          </button>
-
-          <input
-            type="file"
-            class="quiz-helper-file-input"
-            id="importFile"
-            accept=".json"
-            style="display: none"
-          />
-          <button class="quiz-helper-button secondary" id="importBtn">
-            📥 Nhập dữ liệu
-          </button>
-
-          <button class="quiz-helper-button danger" id="clearBtn">
-            🗑️ Xóa tất cả dữ liệu
-          </button>
-        </div>
-
-        <!-- Export/Import Area -->
-        <div id="exportArea" style="display: none">
-          <h4>Dữ liệu xuất</h4>
-          <textarea
-            class="quiz-helper-textarea"
-            id="exportData"
-            readonly
-            placeholder="Dữ liệu sẽ hiển thị ở đây..."
-          ></textarea>
-          <button class="quiz-helper-button secondary" id="copyBtn">
-            📋 Copy
-          </button>
-          <button class="quiz-helper-button secondary" id="downloadBtn">
-            💾 Tải xuống
-          </button>
-        </div>
-
-        <div id="importArea" style="display: none">
-          <h4>Nhập dữ liệu</h4>
-          <textarea
-            class="quiz-helper-textarea"
-            id="importData"
-            placeholder="Dán dữ liệu JSON vào đây..."
-          ></textarea>
-          <button class="quiz-helper-button" id="processImportBtn">
-            ✅ Nhập
-          </button>
-          <button class="quiz-helper-button secondary" id="cancelImportBtn">
-            ❌ Hủy
-          </button>
-        </div>
-
-        <!-- Status Messages -->
-        <div id="statusMessage" style="display: none"></div>
-
-        <!-- Debug Console -->
-        <div class="quiz-helper-section">
-          <h4>Debug Console</h4>
-          <div class="quiz-helper-debug-controls">
-            <button class="quiz-helper-button" id="openDebugBtn">
-              🐛 Mở Debug Console
-            </button>
-            <button class="quiz-helper-button secondary" id="clearDebugBtn">
-              🗑️ Xóa Debug Logs
-            </button>
-          </div>
-          <div class="quiz-helper-debug-info">
-            <small style="font-size: 11px; color: #666"
-              >Debug console sẽ mở trong cửa sổ riêng để theo dõi hoạt động của
-              extension.</small
-            >
-          </div>
-        </div>
-
-        <!-- Help -->
-        <div class="quiz-helper-section" style="margin-top: 16px">
-          <h4>Hướng dẫn</h4>
-          <p style="font-size: 12px; color: #666">
-            • Khi thấy đáp án đúng, nhấn "💾 Lưu đáp án"<br />
-            • Lần sau gặp câu hỏi tương tự sẽ được tô vàng gợi ý<br />
-            • Xuất/nhập dữ liệu để sao lưu hoặc chia sẻ<br />
-            • Tắt extension để ẩn tất cả gợi ý
-          </p>
-        </div>
-      </div>
+<body>
+  <div class="quiz-helper-popup">
+    <div class="quiz-helper-header">
+      <h3>Quiz Helper - Trợ lý Đáp án</h3>
     </div>
 
-    <script src="popup.js"></script>
-  </body>
+    <div class="quiz-helper-content">
+      <!-- Extension Toggle -->
+      <div class="quiz-helper-toggle">
+        <span>Bật/Tắt gợi ý</span>
+        <div class="quiz-helper-switch" id="extensionToggle">
+          <div class="quiz-helper-switch-handle"></div>
+        </div>
+      </div>
+
+      <!-- Statistics -->
+      <div class="quiz-helper-stats">
+        <h4>Thống kê</h4>
+        <div class="quiz-helper-stat-item">
+          <span>Số câu hỏi đã lưu:</span>
+          <strong id="savedCount">0</strong>
+        </div>
+        <div class="quiz-helper-stat-item">
+          <span>Dung lượng sử dụng:</span>
+          <strong id="storageUsed">0 KB</strong>
+        </div>
+      </div>
+
+      <!-- Automation Controls -->
+      <div class="quiz-helper-section">
+        <h4>Auto Mode</h4>
+        <div class="quiz-helper-auto-controls">
+          <div class="quiz-helper-auto-status" id="automationStatus">
+            Auto: tắt | Repeat: tắt
+          </div>
+
+          <button class="quiz-helper-button" id="autoModeBtn">
+            🤖 Bật Auto
+          </button>
+
+          <button class="quiz-helper-button secondary" id="repeatModeBtn">
+            🔄 Bật Repeat
+          </button>
+
+          <div class="quiz-helper-auto-config">
+            <label for="wrongAnswerCountInput">Số câu trả lời sai</label>
+            <input type="number" class="quiz-helper-input" id="wrongAnswerCountInput" min="0" max="50" />
+          </div>
+
+          <button class="quiz-helper-button secondary" id="saveWrongCountBtn">
+            Lưu số câu sai
+          </button>
+        </div>
+      </div>
+
+      <!-- Data Management -->
+      <div class="quiz-helper-section">
+        <h4>Quản lý dữ liệu</h4>
+
+        <button class="quiz-helper-button" id="exportBtn">
+          📤 Xuất dữ liệu
+        </button>
+
+        <input type="file" class="quiz-helper-file-input" id="importFile" accept=".json" style="display: none" />
+        <button class="quiz-helper-button secondary" id="importBtn">
+          📥 Nhập dữ liệu
+        </button>
+
+        <button class="quiz-helper-button danger" id="clearBtn">
+          🗑️ Xóa tất cả dữ liệu
+        </button>
+      </div>
+
+      <!-- Export/Import Area -->
+      <div id="exportArea" style="display: none">
+        <h4>Dữ liệu xuất</h4>
+        <textarea class="quiz-helper-textarea" id="exportData" readonly
+          placeholder="Dữ liệu sẽ hiển thị ở đây..."></textarea>
+        <button class="quiz-helper-button secondary" id="copyBtn">
+          📋 Copy
+        </button>
+        <button class="quiz-helper-button secondary" id="downloadBtn">
+          💾 Tải xuống
+        </button>
+      </div>
+
+      <div id="importArea" style="display: none">
+        <h4>Nhập dữ liệu</h4>
+        <textarea class="quiz-helper-textarea" id="importData" placeholder="Dán dữ liệu JSON vào đây..."></textarea>
+        <button class="quiz-helper-button" id="processImportBtn">
+          ✅ Nhập
+        </button>
+        <button class="quiz-helper-button secondary" id="cancelImportBtn">
+          ❌ Hủy
+        </button>
+      </div>
+
+      <!-- Status Messages -->
+      <div id="statusMessage" style="display: none"></div>
+
+      <!-- Debug Console -->
+      <div class="quiz-helper-section">
+        <h4>Debug Console</h4>
+        <div class="quiz-helper-debug-controls">
+          <button class="quiz-helper-button" id="openDebugBtn">
+            🐛 Mở Debug Console
+          </button>
+          <button class="quiz-helper-button secondary" id="clearDebugBtn">
+            🗑️ Xóa Debug Logs
+          </button>
+        </div>
+        <div class="quiz-helper-debug-info">
+          <small style="font-size: 11px; color: #666">Debug console sẽ mở trong cửa sổ riêng để theo dõi hoạt động của
+            extension.</small>
+        </div>
+      </div>
+
+      <!-- Help -->
+      <div class="quiz-helper-section" style="margin-top: 16px">
+        <h4>Hướng dẫn</h4>
+        <p style="font-size: 12px; color: #666">
+          • Khi thấy đáp án đúng, nhấn "💾 Lưu đáp án"<br />
+          • Lần sau gặp câu hỏi tương tự sẽ được tô vàng gợi ý<br />
+          • Xuất/nhập dữ liệu để sao lưu hoặc chia sẻ<br />
+          • Tắt extension để ẩn tất cả gợi ý
+        </p>
+      </div>
+    </div>
+  </div>
+
+  <script src="popup.js"></script>
+</body>
+
 </html>

@@ -1,19 +1,45 @@
 // Popup script
 class QuizHelperPopup {
   constructor() {
+    this.autoMode = false;
+    this.repeatMode = false;
+    this.wrongAnswerCount = 0;
     this.init();
   }
 
   async init() {
     await this.loadSettings();
     await this.loadStats();
+    await this.loadAutomationState();
     this.bindEvents();
     this.updateUI();
   }
 
   async loadSettings() {
-    const result = await chrome.storage.sync.get(['extensionEnabled']);
+    const result = await chrome.storage.sync.get(['extensionEnabled', 'wrongAnswerCount']);
     this.extensionEnabled = result.extensionEnabled !== false;
+    this.wrongAnswerCount = result.wrongAnswerCount || 0;
+  }
+
+  async loadAutomationState() {
+    try {
+      const response = await this.sendToActiveTab({ action: 'getAutoModeStatus' });
+      this.autoMode = response?.autoMode || false;
+      this.repeatMode = response?.repeatMode || false;
+    } catch (error) {
+      this.autoMode = false;
+      this.repeatMode = false;
+    }
+  }
+
+  async sendToActiveTab(message) {
+    const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+
+    if (!tab?.id) {
+      throw new Error('Không tìm thấy tab đang hoạt động');
+    }
+
+    return await chrome.tabs.sendMessage(tab.id, message);
   }
 
   async loadStats() {
@@ -40,6 +66,25 @@ class QuizHelperPopup {
     // Extension toggle
     document.getElementById('extensionToggle').addEventListener('click', () => {
       this.toggleExtension();
+    });
+
+    // Automation controls
+    document.getElementById('autoModeBtn').addEventListener('click', () => {
+      this.toggleAutoMode();
+    });
+
+    document.getElementById('repeatModeBtn').addEventListener('click', () => {
+      this.toggleRepeatMode();
+    });
+
+    document.getElementById('saveWrongCountBtn').addEventListener('click', () => {
+      this.saveWrongAnswerCount();
+    });
+
+    document.getElementById('wrongAnswerCountInput').addEventListener('keydown', (event) => {
+      if (event.key === 'Enter') {
+        this.saveWrongAnswerCount();
+      }
     });
 
     // Export button
@@ -104,12 +149,102 @@ class QuizHelperPopup {
     // Update stats
     document.getElementById('savedCount').textContent = this.stats.savedCount;
     document.getElementById('storageUsed').textContent = `${this.stats.storageUsed} KB`;
+    document.getElementById('wrongAnswerCountInput').value = this.wrongAnswerCount;
+    this.updateAutomationUI();
+  }
+
+  updateAutomationUI() {
+    const statusElement = document.getElementById('automationStatus');
+    const autoButton = document.getElementById('autoModeBtn');
+    const repeatButton = document.getElementById('repeatModeBtn');
+    const saveButton = document.getElementById('saveWrongCountBtn');
+    const wrongCountInput = document.getElementById('wrongAnswerCountInput');
+
+    if (statusElement) {
+      statusElement.textContent = `Auto: ${this.autoMode ? 'đang chạy' : 'tắt'} | Repeat: ${this.repeatMode ? 'đang chạy' : 'tắt'} | Số câu sai: ${this.wrongAnswerCount}`;
+    }
+
+    if (autoButton) {
+      autoButton.textContent = this.autoMode ? '⏹️ Dừng Auto' : '🤖 Bật Auto';
+      autoButton.classList.toggle('auto-active', this.autoMode);
+      autoButton.disabled = !this.extensionEnabled;
+    }
+
+    if (repeatButton) {
+      repeatButton.textContent = this.repeatMode ? '⏸️ Tạm dừng Repeat' : '🔄 Bật Repeat';
+      repeatButton.classList.toggle('auto-active', this.repeatMode);
+      repeatButton.disabled = !this.extensionEnabled;
+    }
+
+    if (saveButton) {
+      saveButton.disabled = !this.extensionEnabled;
+    }
+
+    if (wrongCountInput) {
+      wrongCountInput.disabled = !this.extensionEnabled;
+    }
   }
 
   async toggleExtension() {
     this.extensionEnabled = !this.extensionEnabled;
     await chrome.storage.sync.set({ extensionEnabled: this.extensionEnabled });
     this.updateUI();
+  }
+
+  async toggleAutoMode() {
+    try {
+      const action = this.autoMode ? 'stopAutoMode' : 'startAutoMode';
+      const response = await this.sendToActiveTab({ action });
+
+      if (response?.success === false) {
+        throw new Error(response.error || 'Unknown error');
+      }
+
+      this.autoMode = !this.autoMode;
+      this.updateAutomationUI();
+      this.showStatus(this.autoMode ? 'Đã bật Auto mode' : 'Đã tắt Auto mode', 'success');
+    } catch (error) {
+      console.error('Auto mode error:', error);
+      this.showStatus(`Lỗi khi đổi Auto mode: ${error.message}`, 'error');
+    }
+  }
+
+  async toggleRepeatMode() {
+    try {
+      const action = this.repeatMode ? 'stopRepeatMode' : 'startRepeatMode';
+      const response = await this.sendToActiveTab({ action });
+
+      if (response?.success === false) {
+        throw new Error(response.error || 'Unknown error');
+      }
+
+      this.repeatMode = !this.repeatMode;
+      this.updateAutomationUI();
+      this.showStatus(this.repeatMode ? 'Đã bật Repeat mode' : 'Đã tắt Repeat mode', 'success');
+    } catch (error) {
+      console.error('Repeat mode error:', error);
+      this.showStatus(`Lỗi khi đổi Repeat mode: ${error.message}`, 'error');
+    }
+  }
+
+  async saveWrongAnswerCount() {
+    try {
+      const input = document.getElementById('wrongAnswerCountInput');
+      const value = Number.parseInt(input.value, 10);
+
+      if (Number.isNaN(value) || value < 0 || value > 50) {
+        this.showStatus('Vui lòng nhập số từ 0 đến 50', 'error');
+        return;
+      }
+
+      this.wrongAnswerCount = value;
+      await chrome.storage.sync.set({ wrongAnswerCount: value });
+      this.updateAutomationUI();
+      this.showStatus('Đã lưu số câu trả lời sai', 'success');
+    } catch (error) {
+      console.error('Wrong answer count error:', error);
+      this.showStatus(`Lỗi khi lưu số câu sai: ${error.message}`, 'error');
+    }
   }
 
   async exportData() {

@@ -85,3 +85,24 @@
     };
     // alert('Quiz Helper Extension: Unfocus mode enabled. The quiz will continue to function even when the tab is not active.');
 })();
+
+// (() => {
+//     setInterval(() => {
+//   document.querySelectorAll(`
+//     .ant-modal-root,
+//     .ant-modal-wrap,
+//     .ant-modal-mask,
+//     .MuiModal-root,
+//     .MuiBackdrop-root,
+//     .swal2-container,
+//     .modal,
+//     .modal-backdrop,
+//     [role="dialog"]
+//   `).forEach(el => {
+//     el.style.display = 'none';
+//     el.remove();
+//   });
+//   document.body.style.overflow = 'auto';
+//   document.body.style.pointerEvents = 'auto';
+// }, 300);
+// })();
