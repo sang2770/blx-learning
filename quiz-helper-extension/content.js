@@ -110,6 +110,64 @@ class QuizHelper {
     });
   }
 
+  simulateHumanClick(element) {
+    if (!element) return;
+    
+    // Smooth scroll into view if not visible
+    element.scrollIntoView({ behavior: 'smooth', block: 'center' });
+
+    setTimeout(() => {
+      const rect = element.getBoundingClientRect();
+      // randomize position around center
+      const x = rect.left + rect.width / 2 + (Math.random() * 10 - 5);
+      const y = rect.top + rect.height / 2 + (Math.random() * 10 - 5);
+
+      const emitEvent = (type, EventClass = MouseEvent, extra = {}) => {
+        const event = new EventClass(type, {
+          view: window,
+          bubbles: true,
+          cancelable: true,
+          clientX: x,
+          clientY: y,
+          ...extra
+        });
+        element.dispatchEvent(event);
+      };
+
+      // 1. Mouse over/move
+      emitEvent('mouseover');
+      emitEvent('mousemove');
+      try {
+        emitEvent('pointerover', PointerEvent, { pointerType: 'mouse' });
+      } catch(e) {}
+
+      // Wait 50-150ms before mousedown
+      setTimeout(() => {
+        emitEvent('mousedown', MouseEvent, { buttons: 1 });
+        try {
+          emitEvent('pointerdown', PointerEvent, { pointerType: 'mouse', buttons: 1 });
+        } catch(e) {}
+
+        // Wait 30-100ms before mouseup
+        setTimeout(() => {
+          emitEvent('mouseup');
+          try {
+            emitEvent('pointerup', PointerEvent, { pointerType: 'mouse' });
+          } catch(e) {}
+          
+          // Final click action
+          element.click();
+          
+          // trigger change if it's a radio or checkbox
+          if (element.tagName.toLowerCase() === 'input' && (element.type === 'radio' || element.type === 'checkbox')) {
+            element.dispatchEvent(new Event('change', { bubbles: true }));
+          }
+        }, 30 + Math.random() * 70);
+      }, 50 + Math.random() * 100);
+    }, 100 + Math.random() * 200); // Wait for scroll
+  }
+
+
   startObserver() {
     if (this.observerActive) return;
 
@@ -339,7 +397,7 @@ class QuizHelper {
     if (finishBtn.length > 0) {
       const btn = [...finishBtn].find(el => el.textContent.includes("Kết thúc luyện thi"));
       if (btn) {
-        btn.click();
+        this.simulateHumanClick(btn);
         setTimeout(() => {
           if (this.repeatMode) {
             this.scheduleNextRepeat();
@@ -359,7 +417,7 @@ class QuizHelper {
     if (startBtn.length > 0) {
       const btn = [...startBtn].find(el => el.textContent.includes("Luyện tất cả"));
       if (btn) {
-        btn.click();
+        this.simulateHumanClick(btn);
         DebugLogger.info("Clicked start exam button" + (this.repeatMode ? " (repeat mode)" : ""));
         return true;
       }
@@ -581,7 +639,7 @@ class QuizHelper {
       const labelText = this.findAnswerLabel(radio);
       if (labelText && this.isAnswerMatch(labelText, correctAnswerText)) {
         // Select the radio button
-        radio.click();
+        this.simulateHumanClick(radio);
         this.next();
         return true;
       }
@@ -720,7 +778,7 @@ class QuizHelper {
     if (wrongOptions.length > 0) {
       // Select random wrong answer
       const randomWrong = wrongOptions[Math.floor(Math.random() * wrongOptions.length)];
-      randomWrong.radio.click();
+      randomWrong.this.simulateHumanClick(radio);
       this.next();
       return true;
     } else {
@@ -744,7 +802,7 @@ class QuizHelper {
       const randomRadio = radioInputs[randomIndex];
       const labelText = this.findAnswerLabel(randomRadio);
 
-      randomRadio.click();
+      this.simulateHumanClick(randomRadio);
       this.next();
       DebugLogger.info("Auto-selected random answer: " + (labelText || "Unknown"));
       return true;
@@ -785,7 +843,7 @@ class QuizHelper {
       // await this.saveCurrentAnswer(document.body);
 
       // Click the Next button
-      nextBtn.click();
+      this.simulateHumanClick(nextBtn);
 
       // Wait a moment then continue auto process for next question
       setTimeout(() => {
