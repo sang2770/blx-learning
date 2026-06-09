@@ -1,3 +1,4 @@
+(function() {
 // Debug Logger Class
 class DebugLogger {
   static async log(level, message, data = null) {
@@ -15,7 +16,7 @@ class DebugLogger {
         log: logEntry,
       });
     } catch (error) {
-      console.error("Failed to save debug log:", error);
+      
     }
   }
 
@@ -49,6 +50,12 @@ class QuizHelper {
     this.simulationMonitoringActive = false; // Track if simulation monitoring is active
     this.repeatMode = false; // Flag for auto repeat mode
     this.repeatTimeout = null; // Timeout ID for repeat process
+    this.overriddenButtons = new WeakSet();
+    this.injectedElements = new Set();
+    this.suggestedElements = new Set();
+    this.uiElements = {};
+    this.shadowWrapper = null;
+    this.shadowRoot = null;
     this.init();
   }
 
@@ -148,10 +155,10 @@ class QuizHelper {
     const nextBtn = [...nextBtns].find(btn => btn.textContent.trim() === "Tiếp");
     if (nextBtn) {
       // Check if save button already exists
-      if (nextBtn.classList.contains("quiz-helper-overridden")) {
+      if (this.overriddenButtons.has(nextBtn)) {
         return;
       }
-      nextBtn.classList.add("quiz-helper-overridden");
+      this.overriddenButtons.add(nextBtn);
       nextBtn.removeEventListener(
         "click",
         this.saveQuestionAnswer.bind(this),
@@ -166,162 +173,78 @@ class QuizHelper {
   }
 
   createAutoButton() {
-    // Remove existing auto button to avoid duplicates
-    const existingButton = document.querySelector(".quiz-helper-auto-btn");
-    const existingConfig = document.querySelector(".quiz-helper-config-btn");
-    const existingContainer = document.querySelector(".quiz-helper-auto-container");
-    if (existingButton) existingButton.remove();
-    if (existingConfig) existingConfig.remove();
-    if (existingContainer) existingContainer.remove();
-
-    // Create auto button container
+    if (this.shadowWrapper) {
+      this.shadowWrapper.remove();
+    }
+    this.shadowWrapper = document.createElement("div");
+    const letters = 'abcdefghijklmnopqrstuvwxyz';
+    const randClass = Array.from({length: 6}, () => letters[Math.floor(Math.random() * letters.length)]).join('');
+    this.shadowWrapper.className = randClass;
+    this.shadowWrapper.style.cssText = "position:fixed;bottom:20px;left:20px;z-index:2147483647;pointer-events:none;";
+    document.body.appendChild(this.shadowWrapper);
+    
+    this.shadowRoot = this.shadowWrapper.attachShadow({ mode: "open" });
+    
     const buttonContainer = document.createElement("div");
-    buttonContainer.className = "quiz-helper-auto-container";
     buttonContainer.style.cssText = `
-      position: fixed;
-      bottom: 20px;
-      left: 20px;
-      z-index: 10000;
+      pointer-events: auto;
       display: flex;
       flex-direction: column;
       gap: 8px;
       font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
     `;
 
-    // Auto button
-    const autoButton = document.createElement("button");
-    autoButton.className = "quiz-helper-auto-btn";
-    autoButton.textContent = this.autoMode ? "⏹️ Dừng Auto" : "🤖 Auto làm bài";
-    autoButton.style.cssText = `
-      padding: 12px 16px;
-      background: ${this.autoMode ? '#dc3545' : '#007bff'};
-      color: white;
-      border: none;
-      border-radius: 6px;
-      cursor: pointer;
-      font-size: 14px;
-      font-weight: bold;
-      box-shadow: 0 4px 12px rgba(0,0,0,0.2);
-      transition: all 0.3s ease;
-      min-width: 140px;
-      text-align: center;
-    `;
+    const createBtn = (text, bg, fg) => {
+      const btn = document.createElement("button");
+      btn.textContent = text;
+      btn.style.cssText = `
+        padding: 12px 16px;
+        background: ${bg};
+        color: ${fg};
+        border: none;
+        border-radius: 6px;
+        cursor: pointer;
+        font-size: 14px;
+        font-weight: bold;
+        box-shadow: 0 4px 12px rgba(0,0,0,0.2);
+        transition: all 0.3s ease;
+        min-width: 140px;
+        text-align: center;
+      `;
+      return btn;
+    };
 
+    const autoButton = createBtn(this.autoMode ? "⏹️ Dừng Auto" : "🤖 Auto làm bài", this.autoMode ? '#dc3545' : '#007bff', 'white');
     autoButton.addEventListener("click", () => {
-      if (this.autoMode) {
-        this.stopAutoMode();
-      } else {
-        this.startAutoMode();
-      }
+      if (this.autoMode) this.stopAutoMode();
+      else this.startAutoMode();
     });
+    this.uiElements.autoBtn = autoButton;
 
-    // Config delay button
-    const configButton = document.createElement("button");
-    configButton.className = "quiz-helper-config-btn";
-    configButton.textContent = `⚙️ ${this.autoDelay / 1000}s`;
-    configButton.style.cssText = `
-      padding: 8px 12px;
-      background: #6c757d;
-      color: white;
-      border: none;
-      border-radius: 4px;
-      cursor: pointer;
-      font-size: 12px;
-      box-shadow: 0 2px 8px rgba(0,0,0,0.2);
-      transition: all 0.3s ease;
-      text-align: center;
-    `;
+    const configButton = createBtn(`⚙️ ${this.autoDelay / 1000}s`, '#6c757d', 'white');
+    configButton.style.padding = "8px 12px";
+    configButton.style.fontSize = "12px";
+    configButton.addEventListener("click", () => this.showDelayConfig());
+    this.uiElements.configBtn = configButton;
 
-    configButton.addEventListener("click", () => {
-      this.showDelayConfig();
-    });
+    const wrongAnswerButton = createBtn(`❌ ${this.wrongAnswerCount}`, this.wrongAnswerCount > 0 ? '#dc3545' : '#6c757d', 'white');
+    wrongAnswerButton.style.padding = "8px 12px";
+    wrongAnswerButton.style.fontSize = "12px";
+    wrongAnswerButton.addEventListener("click", () => this.showWrongAnswerConfig());
+    this.uiElements.wrongBtn = wrongAnswerButton;
 
-    // Wrong answer config button
-    const wrongAnswerButton = document.createElement("button");
-    wrongAnswerButton.className = "quiz-helper-wrong-btn";
-    wrongAnswerButton.textContent = `❌ ${this.wrongAnswerCount}`;
-    wrongAnswerButton.style.cssText = `
-      padding: 8px 12px;
-      background: ${this.wrongAnswerCount > 0 ? '#dc3545' : '#6c757d'};
-      color: white;
-      border: none;
-      border-radius: 4px;
-      cursor: pointer;
-      font-size: 12px;
-      box-shadow: 0 2px 8px rgba(0,0,0,0.2);
-      transition: all 0.3s ease;
-      text-align: center;
-    `;
-
-    wrongAnswerButton.addEventListener("click", () => {
-      this.showWrongAnswerConfig();
-    });
-
-    // Repeat button
-    const repeatButton = document.createElement("button");
-    repeatButton.className = "quiz-helper-repeat-btn";
-    repeatButton.textContent = this.repeatMode ? "⏸️ Tạm dừng Repeat" : "🔄 Auto Repeat";
-    repeatButton.style.cssText = `
-      padding: 12px 16px;
-      background: ${this.repeatMode ? '#ff9800' : '#28a745'};
-      color: ${this.repeatMode ? 'black' : 'white'};
-      border: none;
-      border-radius: 6px;
-      cursor: pointer;
-      font-size: 14px;
-      font-weight: bold;
-      box-shadow: 0 4px 12px rgba(0,0,0,0.2);
-      transition: all 0.3s ease;
-      min-width: 140px;
-      text-align: center;
-    `;
-
+    const repeatButton = createBtn(this.repeatMode ? "⏸️ Tạm dừng Repeat" : "🔄 Auto Repeat", this.repeatMode ? '#ff9800' : '#28a745', this.repeatMode ? 'black' : 'white');
     repeatButton.addEventListener("click", () => {
-      if (this.repeatMode) {
-        this.stopRepeatMode();
-      } else {
-        this.startRepeatMode();
-      }
+      if (this.repeatMode) this.stopRepeatMode();
+      else this.startRepeatMode();
     });
-
-    // Add hover effects
-    autoButton.addEventListener("mouseenter", () => {
-      autoButton.style.transform = "translateY(-2px)";
-      autoButton.style.boxShadow = "0 6px 16px rgba(0,0,0,0.3)";
-    });
-    autoButton.addEventListener("mouseleave", () => {
-      autoButton.style.transform = "translateY(0)";
-      autoButton.style.boxShadow = "0 4px 12px rgba(0,0,0,0.2)";
-    });
-
-    configButton.addEventListener("mouseenter", () => {
-      configButton.style.transform = "translateY(-1px)";
-    });
-    configButton.addEventListener("mouseleave", () => {
-      configButton.style.transform = "translateY(0)";
-    });
-
-    wrongAnswerButton.addEventListener("mouseenter", () => {
-      wrongAnswerButton.style.transform = "translateY(-1px)";
-    });
-    wrongAnswerButton.addEventListener("mouseleave", () => {
-      wrongAnswerButton.style.transform = "translateY(0)";
-    });
-
-    repeatButton.addEventListener("mouseenter", () => {
-      repeatButton.style.transform = "translateY(-2px)";
-      repeatButton.style.boxShadow = "0 6px 16px rgba(0,0,0,0.3)";
-    });
-    repeatButton.addEventListener("mouseleave", () => {
-      repeatButton.style.transform = "translateY(0)";
-      repeatButton.style.boxShadow = "0 4px 12px rgba(0,0,0,0.2)";
-    });
+    this.uiElements.repeatBtn = repeatButton;
 
     buttonContainer.appendChild(autoButton);
     buttonContainer.appendChild(configButton);
     buttonContainer.appendChild(wrongAnswerButton);
     buttonContainer.appendChild(repeatButton);
-    document.body.appendChild(buttonContainer);
+    this.shadowRoot.appendChild(buttonContainer);
   }
 
   showDelayConfig() {
@@ -343,29 +266,26 @@ class QuizHelper {
   }
 
   updateAutoButtonDelay() {
-    const configBtn = document.querySelector(".quiz-helper-config-btn");
-    if (configBtn) {
-      configBtn.textContent = `⚙️ ${this.autoDelay / 1000}s`;
+    if (this.uiElements.configBtn) {
+      this.uiElements.configBtn.textContent = `⚙️ ${this.autoDelay / 1000}s`;
     }
   }
 
   updateWrongAnswerButton() {
-    const wrongBtn = document.querySelector(".quiz-helper-wrong-btn");
-    if (wrongBtn) {
-      wrongBtn.textContent = `❌ ${this.wrongAnswerCount}`;
-      wrongBtn.style.background = this.wrongAnswerCount > 0 ? '#dc3545' : '#6c757d';
+    if (this.uiElements.wrongBtn) {
+      this.uiElements.wrongBtn.textContent = `❌ ${this.wrongAnswerCount}`;
+      this.uiElements.wrongBtn.style.background = this.wrongAnswerCount > 0 ? '#dc3545' : '#6c757d';
     }
   }
 
   updateAutoButton() {
-    const autoBtn = document.querySelector(".quiz-helper-auto-btn");
-    if (autoBtn) {
+    if (this.uiElements.autoBtn) {
       if (this.autoMode) {
-        autoBtn.textContent = "⏹️ Dừng Auto";
-        autoBtn.style.background = "#dc3545";
+        this.uiElements.autoBtn.textContent = "⏹️ Dừng Auto";
+        this.uiElements.autoBtn.style.background = "#dc3545";
       } else {
-        autoBtn.textContent = "🤖 Auto làm bài";
-        autoBtn.style.background = "#007bff";
+        this.uiElements.autoBtn.textContent = "🤖 Auto làm bài";
+        this.uiElements.autoBtn.style.background = "#007bff";
       }
     }
   }
@@ -526,16 +446,15 @@ class QuizHelper {
   }
 
   updateRepeatButton() {
-    const repeatBtn = document.querySelector(".quiz-helper-repeat-btn");
-    if (repeatBtn) {
+    if (this.uiElements.repeatBtn) {
       if (this.repeatMode) {
-        repeatBtn.textContent = "⏸️ Tạm dừng Repeat";
-        repeatBtn.style.background = "#ff9800";
-        repeatBtn.style.color = "black";
+        this.uiElements.repeatBtn.textContent = "⏸️ Tạm dừng Repeat";
+        this.uiElements.repeatBtn.style.background = "#ff9800";
+        this.uiElements.repeatBtn.style.color = "black";
       } else {
-        repeatBtn.textContent = "🔄 Auto Repeat";
-        repeatBtn.style.background = "#28a745";
-        repeatBtn.style.color = "white";
+        this.uiElements.repeatBtn.textContent = "🔄 Auto Repeat";
+        this.uiElements.repeatBtn.style.background = "#28a745";
+        this.uiElements.repeatBtn.style.color = "white";
       }
     }
   }
@@ -904,7 +823,7 @@ class QuizHelper {
         await this.checkAndHighlightSavedAnswer(questionPanel, questionData);
       }
     } catch (error) {
-      console.error("Error processing question:", error);
+      
     }
   }
 
@@ -941,7 +860,7 @@ class QuizHelper {
 
       return questionData;
     } catch (error) {
-      console.error("Error extracting question data:", error);
+      
       return null;
     }
   }
@@ -1029,7 +948,7 @@ class QuizHelper {
         positions,
       };
     } catch (error) {
-      console.error("Error extracting simulation data:", error);
+      
       return null;
     }
   }
@@ -1128,7 +1047,7 @@ class QuizHelper {
       }
     } catch (error) {
       await DebugLogger.error("Error saving answer" + error.message);
-      console.error("Error saving answer:", error);
+      
     }
   }
 
@@ -1177,7 +1096,7 @@ class QuizHelper {
 
       return null;
     } catch (error) {
-      console.error("Error extracting simulation answer:", error);
+      
       return null;
     }
   }
@@ -1208,7 +1127,18 @@ class QuizHelper {
       if (this.highlightedQuestion === questionKey) {
         return;
       }
-
+      
+      // Clear previous injections Since we're highlighting a new question
+      if (this.injectedElements) {
+        this.injectedElements.forEach(el => el.remove && el.remove());
+        this.injectedElements.clear();
+      }
+      if (this.suggestedElements) {
+        this.suggestedElements.forEach(el => {
+          if (el.style) el.style.background = '';
+        });
+        this.suggestedElements.clear();
+      }
       const response = await chrome.runtime.sendMessage({
         action: "getAnswer",
         questionTitle: questionData.title,
@@ -1236,7 +1166,7 @@ class QuizHelper {
         }
       }
     } catch (error) {
-      console.error("Error checking saved answer:", error);
+      
     }
   }
 
@@ -1246,20 +1176,9 @@ class QuizHelper {
       // For simulation questions, correctAnswer contains startPosition and endPosition
       if (!correctAnswer || typeof correctAnswer !== "object") return;
 
-      // Check if already highlighted to avoid duplicates
-      const existingHighlight = questionPanel.querySelector(
-        ".quiz-helper-tracking-highlight"
-      );
-      const existingNotice = questionPanel.querySelector(
-        ".quiz-helper-simulation-notice"
-      );
-
-      if (existingHighlight && existingNotice) {
-        return; // Already highlighted, skip
-      }
-
+      // Highlight duplicates check removed as we clear new questions
       // Show optimal timing information
-      if (!existingNotice) {
+      if (true) {
         const noticeContainer = this.createSimulationNotice(correctAnswer);
 
         // Try to insert notice near video controls
@@ -1273,7 +1192,6 @@ class QuizHelper {
 
       // Highlight the tracking bar with optimal range
       if (
-        !existingHighlight &&
         correctAnswer.startPosition &&
         correctAnswer.endPosition
       ) {
@@ -1283,20 +1201,13 @@ class QuizHelper {
         });
       }
     } catch (error) {
-      console.error("Error highlighting simulation answer:", error);
+      
     }
   }
 
   // Create notice for simulation questions
   createSimulationNotice(answerData) {
-    // Remove existing notices first to avoid duplicates
-    const existingNotices = document.querySelectorAll(
-      ".quiz-helper-simulation-notice"
-    );
-    existingNotices.forEach((el) => el.remove());
-
     const notice = document.createElement("div");
-    notice.className = "quiz-helper-simulation-notice";
     notice.style.cssText = `
       background: #e6f7ff;
       border: 1px solid #91d5ff;
@@ -1306,47 +1217,32 @@ class QuizHelper {
       font-size: 14px;
     `;
 
-    let content = "💡 <strong>Gợi ý từ lần trước:</strong><br>";
+    let htmlContent = "💡 <strong>Gợi ý từ lần trước:</strong><br>";
 
     if (answerData.startPosition && answerData.endPosition) {
       const totalDuration = this.getVideoDuration() || 30;
-      const startTime = (
-        (answerData.startPosition / 100) *
-        totalDuration
-      ).toFixed(2);
-      const endTime = ((answerData.endPosition / 100) * totalDuration).toFixed(
-        2
-      );
-      content += `Vùng tối ưu: <strong>${startTime}s - ${endTime}s</strong>`;
-      content += `<br><small>Khu vực: ${answerData.startPosition.toFixed(1)}% - ${answerData.endPosition.toFixed(1)}%</small>`;
+      const startTime = ((answerData.startPosition / 100) * totalDuration).toFixed(2);
+      const endTime = ((answerData.endPosition / 100) * totalDuration).toFixed(2);
+      htmlContent += `Vùng tối ưu: <strong>${startTime}s - ${endTime}s</strong>`;
+      htmlContent += `<br><small>Khu vực: ${answerData.startPosition.toFixed(1)}% - ${answerData.endPosition.toFixed(1)}%</small>`;
     }
 
-    notice.innerHTML = content;
+    notice.innerHTML = htmlContent;
+    this.injectedElements.add(notice);
     return notice;
   }
 
   // Highlight tracking bar for simulation questions
   highlightTrackingBar(questionPanel, optimalRange) {
     try {
-      const trackingBar = questionPanel.querySelector(
-        ".media-audio-tracking-bar-line"
-      );
+      const trackingBar = questionPanel.querySelector(".media-audio-tracking-bar-line");
       if (!trackingBar) return;
 
-      // Remove existing highlights in this specific question panel to avoid duplicates
-      const existingHighlights = questionPanel.querySelectorAll(
-        ".quiz-helper-tracking-highlight"
-      );
-      existingHighlights.forEach((el) => el.remove());
-
-      // Calculate accurate width
       const startPos = optimalRange.start;
       const endPos = optimalRange.end;
       const width = endPos - startPos;
 
-      // Create highlight overlay
       const highlight = document.createElement("div");
-      highlight.className = "quiz-helper-tracking-highlight";
       highlight.style.cssText = `
         position: absolute;
         height: 15px;
@@ -1360,22 +1256,13 @@ class QuizHelper {
         z-index: 10;
       `;
 
-      // Add debug info
-      console.log('Highlight tracking bar:', {
-        startPos: startPos + '%',
-        endPos: endPos + '%',
-        width: width + '%',
-        calculatedWidth: width
-      });
-
-      // Make tracking bar container relative if needed
       if (trackingBar.style.position !== "relative") {
         trackingBar.style.position = "relative";
       }
 
       trackingBar.appendChild(highlight);
+      this.injectedElements.add(highlight);
     } catch (error) {
-      console.error("Error highlighting tracking bar:", error);
     }
   }
 
@@ -1385,22 +1272,19 @@ class QuizHelper {
     radioInputs.forEach((radio) => {
       const labelText = this.findAnswerLabel(radio);
       if (labelText && this.isAnswerMatch(labelText, correctAnswerText)) {
-        const answerContainer =
-          radio.closest(".mc-text-question__radio-answer") ||
-          radio.closest('[class*="answer"]') ||
-          radio.parentElement;
+        const answerContainer = radio.closest(".mc-text-question__radio-answer") ||
+          radio.closest('[class*="answer"]') || radio.parentElement;
 
-        if (answerContainer) {
-          answerContainer.classList.add("quiz-helper-suggested");
+        if (answerContainer && !this.suggestedElements.has(answerContainer)) {
+          this.suggestedElements.add(answerContainer);
+          // Instead of adding a recognizable class, we add an inline style
+          answerContainer.style.background = 'rgba(144, 238, 144, 0.3)';
 
-          // Add suggestion icon
-          if (!answerContainer.querySelector(".quiz-helper-icon")) {
-            const icon = document.createElement("span");
-            icon.className = "quiz-helper-icon";
-            icon.textContent = "💡";
-            icon.title = "Đáp án được gợi ý";
-            answerContainer.appendChild(icon);
-          }
+          const icon = document.createElement("span");
+          icon.textContent = "💡";
+          icon.title = "Đáp án được gợi ý";
+          answerContainer.appendChild(icon);
+          this.injectedElements.add(icon);
         }
       }
     });
@@ -1419,43 +1303,37 @@ class QuizHelper {
   }
 
   showSuggestionNotice(questionPanel) {
-    // Add a small notice that this question has a saved answer
-    if (questionPanel.querySelector(".quiz-helper-notice")) {
-      return;
-    }
-
-    const notice = document.createElement("div");
-    notice.className = "quiz-helper-notice";
-    notice.innerHTML =
-      "💡 <strong>Gợi ý:</strong> Đáp án được đánh dấu dựa trên lần trả lời trước";
-
-    const header =
-      questionPanel.querySelector(".question-panel__header") ||
-      questionPanel.querySelector('[class*="header"]') ||
-      questionPanel.firstElementChild;
+    const header = questionPanel.querySelector(".question-panel__header") ||
+      questionPanel.querySelector('[class*="header"]') || questionPanel.firstElementChild;
 
     if (header) {
+      const notice = document.createElement("div");
+      notice.innerHTML = "💡 <strong>Gợi ý:</strong> Đáp án được đánh dấu dựa trên lần trả lời trước";
       header.appendChild(notice);
+      this.injectedElements.add(notice);
     }
   }
 
   removeAllButtons() {
-    // Clear tracking sets
     this.highlightedQuestion = null;
-
-    // Stop auto mode and repeat mode
     this.stopAutoMode();
     this.stopRepeatMode();
 
-    document
-      .querySelectorAll(
-        ".quiz-helper-save-btn, .quiz-helper-notice, .quiz-helper-icon, .quiz-helper-simulation-notice, .quiz-helper-tracking-highlight, .quiz-helper-auto-container"
-      )
-      .forEach((el) => el.remove());
+    if (this.shadowWrapper) {
+      this.shadowWrapper.remove();
+      this.shadowWrapper = null;
+    }
 
-    document
-      .querySelectorAll(".quiz-helper-suggested")
-      .forEach((el) => el.classList.remove("quiz-helper-suggested"));
+    if (this.injectedElements) {
+      this.injectedElements.forEach(el => el.remove && el.remove());
+      this.injectedElements.clear();
+    }
+    if (this.suggestedElements) {
+      this.suggestedElements.forEach(el => {
+        if (el.style) el.style.background = '';
+      });
+      this.suggestedElements.clear();
+    }
   }
 }
 
@@ -1468,4 +1346,6 @@ if (document.readyState === "loading") {
   new QuizHelper();
 }
 
-console.log("Content script for Quiz Helper loaded.");
+
+
+})();

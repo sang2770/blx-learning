@@ -1,0 +1,8 @@
+{
+  "dependencies": {
+    "cloakbrowser": "^0.3.31",
+    "playwright-core": "^1.60.0",
+    "puppeteer": "^25.1.0",
+    "undetected-browser": "^2.0.6"
+  }
+}
