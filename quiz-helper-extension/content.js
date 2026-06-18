@@ -227,6 +227,7 @@ class QuizHelper {
         this.saveQuestionAnswer.bind(this),
         true
       );
+      clearInterval(this.addSaveButtonInterval);
     }
   }
 
@@ -524,8 +525,10 @@ class QuizHelper {
   async runAutoProcess() {
     if (!this.autoMode) return;
     try {
+      // random from 4 - 7s
+      this.autoDelay = Math.random() * 3000 + 4000; // Random delay between 4s and 7s
       // delay 2s
-      // await new Promise(resolve => setTimeout(resolve, this.autoDelay));
+      await new Promise(resolve => setTimeout(resolve, this.autoDelay));
       // First try to auto select answer
       const answerSelected = await this.autoSelectAnswer();
 
@@ -540,6 +543,7 @@ class QuizHelper {
           }
         }, this.autoDelay);
       }
+      this.autoDelay = Math.random() * 3000 + 4000; // Random delay between 4s and 7s
       // wait 2s
       await new Promise(resolve => setTimeout(resolve, this.autoDelay));
       this.checkForRepeatCompletion();
